@@ -1042,8 +1042,8 @@ export class TimelineManager {
     this.container.innerHTML = `
       <div
         data-grid-fit-container="true"
-        data-grid-reserved-height="190"
-        style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 12px 16px 88px; overflow: hidden;"
+        data-grid-reserved-height="125"
+        style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 10px 16px 48px; overflow: hidden;"
       >
         <div style="text-align: center; max-width: 800px; width: 100%; display: flex; flex-direction: column; align-items: center;">
           <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">Game ${experimentIndex + 1}: Round ${trialIndex + 1}/${totalRounds}</h3>
