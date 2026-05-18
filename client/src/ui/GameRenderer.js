@@ -35,13 +35,13 @@ export class GameRenderer {
 
     // Determine maximum CSS size available (square) based on viewport and parent container
     const parent = this.canvas.parentElement;
+    const fitContainer = this.canvas.closest?.('[data-grid-fit-container="true"]');
     const viewportWidth = (typeof window !== 'undefined') ? (window.innerWidth || 0) : this.canvasSize;
     const viewportHeight = (typeof window !== 'undefined')
       ? Math.floor(window.visualViewport?.height || window.innerHeight || 0)
       : this.canvasSize;
     const viewportMin = Math.min(viewportWidth, viewportHeight);
-    const parentWidth = parent ? parent.clientWidth : viewportMin;
-    const fitContainer = this.canvas.closest?.('[data-grid-fit-container="true"]');
+    const parentWidth = fitContainer?.clientWidth || parent?.clientWidth || viewportMin;
     const reservedHeight = fitContainer
       ? Number(fitContainer.getAttribute('data-grid-reserved-height') || 170)
       : 0;
