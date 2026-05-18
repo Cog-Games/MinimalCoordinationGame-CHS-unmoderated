@@ -1040,15 +1040,18 @@ export class TimelineManager {
 
     // Create trial container with game canvas area
     this.container.innerHTML = `
-      <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
-        <div style="text-align: center; max-width: 800px; width: 100%;">
-          <h3 style="margin-bottom: 20px;">Game ${experimentIndex + 1}</h3>
-          <h4 style="margin: -8px 0 16px 0; color: #4b5563;">Round ${trialIndex + 1}/${totalRounds}</h4>
-          <div id="game-canvas-container" style="margin: 0 auto; position: relative; display: flex; justify-content: center;">
+      <div
+        data-grid-fit-container="true"
+        data-grid-reserved-height="190"
+        style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 12px 16px 88px; overflow: hidden;"
+      >
+        <div style="text-align: center; max-width: 800px; width: 100%; display: flex; flex-direction: column; align-items: center;">
+          <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">Game ${experimentIndex + 1}: Round ${trialIndex + 1}/${totalRounds}</h3>
+          <div id="game-canvas-container" style="margin: 0 auto; position: relative; display: flex; justify-content: center; max-width: 100%;">
             <!-- Game canvas will be inserted here by ExperimentManager -->
           </div>
-          <div style="margin-top: 20px; font-size: 14px; color: #666;">
-            <p>You are ${playerName} <span style="display: inline-block; width: 18px; height: 18px; background-color: ${playerColor}; border-radius: 50%; vertical-align: middle;"></span>. Use arrow keys to move.</p>
+          <div style="margin-top: 8px; font-size: 14px; color: #666; line-height: 1.3;">
+            <p style="margin: 0;">You are ${playerName} <span style="display: inline-block; width: 18px; height: 18px; background-color: ${playerColor}; border-radius: 50%; vertical-align: middle;"></span>. Use arrow keys to move.</p>
           </div>
         </div>
       </div>

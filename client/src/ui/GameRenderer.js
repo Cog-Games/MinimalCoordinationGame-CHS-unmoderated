@@ -35,11 +35,29 @@ export class GameRenderer {
 
     // Determine maximum CSS size available (square) based on viewport and parent container
     const parent = this.canvas.parentElement;
-    const viewportMin = (typeof window !== 'undefined') ? Math.min(window.innerWidth || 0, window.innerHeight || 0) : this.canvasSize;
+    const viewportWidth = (typeof window !== 'undefined') ? (window.innerWidth || 0) : this.canvasSize;
+    const viewportHeight = (typeof window !== 'undefined')
+      ? Math.floor(window.visualViewport?.height || window.innerHeight || 0)
+      : this.canvasSize;
+    const viewportMin = Math.min(viewportWidth, viewportHeight);
     const parentWidth = parent ? parent.clientWidth : viewportMin;
+    const fitContainer = this.canvas.closest?.('[data-grid-fit-container="true"]');
+    const reservedHeight = fitContainer
+      ? Number(fitContainer.getAttribute('data-grid-reserved-height') || 170)
+      : 0;
+    const heightLimit = reservedHeight > 0
+      ? Math.max(220, viewportHeight - reservedHeight)
+      : viewportMin * 0.85;
 
-    // Use 85% of the smaller dimension, but never exceed parent width
-    const targetCssSize = Math.max(200, Math.floor(Math.min(viewportMin * 0.85, parentWidth - 16)));
+    const configuredMaxSize = Number(CONFIG.visual.canvasSize) || this.canvasSize;
+    const widthLimit = Math.min(parentWidth - 16, viewportWidth - 32);
+
+    // Keep the grid square while reserving room for title, round info, player label,
+    // and host-platform controls such as Lookit's bottom-right Next button.
+    const targetCssSize = Math.max(
+      200,
+      Math.floor(Math.min(heightLimit, widthLimit, configuredMaxSize))
+    );
 
     // Compute integer cellSize based on padding formula:
     // total = N*cellSize + (N+1)*padding  => cellSize = (total - (N+1)*padding)/N

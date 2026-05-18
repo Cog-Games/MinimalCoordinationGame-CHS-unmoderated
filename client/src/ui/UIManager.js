@@ -263,7 +263,10 @@ export class UIManager {
     const trialInfo = document.getElementById('trial-info');
 
     if (gameTitle) {
-      gameTitle.textContent = `Game ${experimentIndex + 1}`;
+      const totalRounds = CONFIG?.game?.experiments?.numTrials?.[experimentType] || '';
+      gameTitle.textContent = totalRounds
+        ? `Game ${experimentIndex + 1}: Round ${trialIndex + 1}/${totalRounds}`
+        : `Game ${experimentIndex + 1}`;
     }
 
     if (trialInfo) {
