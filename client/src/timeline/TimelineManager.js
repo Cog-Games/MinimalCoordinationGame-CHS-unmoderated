@@ -1575,19 +1575,19 @@ export class TimelineManager {
             Thank you for participating in our study!
           </p>
 
+          <p style="font-size: 16px; line-height: 1.5; margin: 0 auto 24px; max-width: 460px; color: #333;">
+            When your data has saved successfully, please click the green <strong>Next</strong> button at the bottom right of the screen.
+          </p>
+
           <!--
           <div style="background: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ffeeba; color: #856404;">
             We are saving your data now. Your completion code will be shown after your data has been saved successfully.
           </div>
           -->
 
-          <div style="margin-bottom: 30px;">
+          <div style="margin-bottom: 8px;">
             <div id="saving-status" style="display: inline-block; margin: 10px; color: #666;">📊 Saving your data...</div>
           </div>
-
-          <button id="continueBtn" style="background: #007bff; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 5px; cursor: pointer;">
-            Continue
-          </button>
         </div>
       </div>
     `;
@@ -1598,68 +1598,34 @@ export class TimelineManager {
     this.experimentData.endTime = new Date().toISOString();
 
     this.emit('save-data', this.experimentData);
-    // If external saving is enabled, disable Continue until save succeeds
-    const continueBtn = document.getElementById('continueBtn');
-    try {
-      if (CONFIG?.server?.enableGoogleDriveSave && continueBtn) {
-        continueBtn.disabled = true;
-        continueBtn.style.opacity = '0.6';
-        continueBtn.style.cursor = 'not-allowed';
-        continueBtn.textContent = 'Saving...';
-      }
-    } catch (e) {
-      // Fail open if config inaccessible
-    }
 
-    // Safety: If save takes too long or fails silently, allow manual continue after a grace period
+    // Safety: If save takes too long or fails silently, still direct participants to the platform Next button.
     try {
       if (CONFIG?.server?.enableGoogleDriveSave) {
         setTimeout(() => {
           const el = document.getElementById('saving-status');
-          const btn = document.getElementById('continueBtn');
-          if (el && btn && btn.disabled) {
-            el.textContent = '⚠️ Save taking longer than expected. You may continue.';
+          if (el && !this._lookitDonePosted) {
+            el.textContent = '⚠️ Save taking longer than expected. Please click the green Next button to continue.';
             el.style.color = '#dc3545';
-            btn.disabled = false;
-            btn.style.opacity = '1';
-            btn.style.cursor = 'pointer';
-            btn.textContent = 'Continue';
+            notifyLookitDone();
           }
         }, 15000);
       }
     } catch (_) { /* noop */ }
 
-    // Update UI when data save succeeds (legacy-style: auto-advance)
+    // Update UI when data save succeeds.
     const handleSaved = () => {
       const el = document.getElementById('saving-status');
       if (el) {
-        el.textContent = '✅ Data saved successfully!';
+        el.textContent = '✅ Data saved successfully! Please click the green Next button at the bottom right.';
         el.style.color = '#28a745';
       }
-      if (continueBtn) {
-        continueBtn.disabled = false;
-        continueBtn.style.opacity = '1';
-        continueBtn.style.cursor = 'pointer';
-        continueBtn.textContent = 'Continue';
-      }
-      // Remove handler and move to next stage automatically
       this.off('data-save-success', handleSaved);
       notifyLookitDone();
-      this.nextStage();
     };
     // Ensure single listener
     this.eventHandlers.delete('data-save-success');
     this.on('data-save-success', handleSaved);
-
-    document.getElementById('continueBtn').addEventListener('click', () => {
-      console.log('💾 Data saving initiated');
-      if (continueBtn && continueBtn.disabled) {
-        console.log('⏳ Waiting for data-save success before continuing');
-        return;
-      }
-      notifyLookitDone();
-      this.nextStage();
-    });
   }
 
   showProlificRedirectStage() {
