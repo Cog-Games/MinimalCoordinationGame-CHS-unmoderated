@@ -7551,8 +7551,8 @@ var En=Object.defineProperty;var Cn=(P,n,e)=>n in P?En(P,n,{enumerable:!0,config
     `,this.emit("show-fixation",{experimentType:n,experimentIndex:e,trialIndex:t});const a=o=>{(o.code==="Space"||o.key===" ")&&(o.preventDefault(),document.removeEventListener("keydown",a),console.log("⏭️ Fixation skipped by user"),this.nextStage())};document.addEventListener("keydown",a),console.log(`⏰ Setting fixation timeout for ${i.game.timing.fixationDuration}ms`);const r=setTimeout(()=>{document.removeEventListener("keydown",a),console.log(`⚡ Fixation completed for trial ${t} - advancing to next stage`),this.nextStage()},i.game.timing.fixationDuration);this.currentFixationTimeout=r}runTrialStage(n,e,t){var s,l,c;console.log(`🎮 Starting trial ${t} of ${n}`);let a=i.visual.colors.player1,r="Player 1 (Red)";n.includes("2P")&&(a=this.playerIndex===0?i.visual.colors.player1:i.visual.colors.player2,r=this.playerIndex===0?"Player 1 (Red)":"Player 2 (Orange)");const o=((c=(l=(s=i==null?void 0:i.game)==null?void 0:s.experiments)==null?void 0:l.numTrials)==null?void 0:c[n])||1;this.container.innerHTML=`
       <div
         data-grid-fit-container="true"
-        data-grid-reserved-height="190"
-        style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 12px 16px 88px; overflow: hidden;"
+        data-grid-reserved-height="125"
+        style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 10px 16px 48px; overflow: hidden;"
       >
         <div style="text-align: center; max-width: 800px; width: 100%; display: flex; flex-direction: column; align-items: center;">
           <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">Game ${e+1}: Round ${t+1}/${o}</h3>
