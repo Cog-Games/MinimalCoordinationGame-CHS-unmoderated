@@ -1572,14 +1572,10 @@ export class TimelineManager {
     this.container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
         <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px; text-align: center;">
-          <h2 style="color: #28a745; margin-bottom: 30px;">🎉 Experiment Complete!</h2>
+          <h2 style="color: #222; margin-bottom: 30px;">Experiment Complete</h2>
 
           <p style="font-size: 18px; margin-bottom: 20px;">
             Thank you for participating in our study!
-          </p>
-
-          <p style="font-size: 16px; line-height: 1.5; margin: 0 auto 24px; max-width: 460px; color: #333;">
-            When your data has saved successfully, please click the green <strong>Next</strong> button at the bottom right of the screen.
           </p>
 
           <!--
@@ -1589,7 +1585,7 @@ export class TimelineManager {
           -->
 
           <div style="margin-bottom: 8px;">
-            <div id="saving-status" style="display: inline-block; margin: 10px; color: #666;">📊 Saving your data...</div>
+            <div id="saving-status" style="display: inline-block; margin: 10px; color: #555; font-size: 16px; line-height: 1.5;">Saving your data...</div>
           </div>
         </div>
       </div>
@@ -1608,8 +1604,8 @@ export class TimelineManager {
         setTimeout(() => {
           const el = document.getElementById('saving-status');
           if (el && !this._lookitDonePosted) {
-            el.textContent = '⚠️ Save taking longer than expected. Please click the green Next button to continue.';
-            el.style.color = '#dc3545';
+            el.textContent = 'Save taking longer than expected. Please click Next at the bottom right to continue.';
+            el.style.color = '#555';
             notifyLookitDone();
           }
         }, 15000);
@@ -1620,8 +1616,8 @@ export class TimelineManager {
     const handleSaved = () => {
       const el = document.getElementById('saving-status');
       if (el) {
-        el.textContent = '✅ Data saved successfully! Please click the green Next button at the bottom right.';
-        el.style.color = '#28a745';
+        el.innerHTML = 'Data saved successfully. Please click <strong style="color: #28a745;">Next</strong> at the bottom right of the screen.';
+        el.style.color = '#333';
       }
       this.off('data-save-success', handleSaved);
       notifyLookitDone();
