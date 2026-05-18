@@ -1370,7 +1370,7 @@ export class TimelineManager {
               <div style="text-align:center; margin-bottom:8px; color:#6b7280; font-weight:600;">${q.title}</div>
               <h2 style="text-align:center; margin:8px 0 20px; color:#111827;">${q.prompt}</h2>
               <div style="margin-bottom:16px; text-align:center; color:#6b7280;">
-                Click an image to answer (or use ↑ ↓ and Space).
+                Click an image to answer (or use arrow keys and Space).
               </div>
               <div id="options" style="display:flex; flex-direction:row; flex-wrap:wrap; justify-content:center; align-items:center;">${optionsHtml}</div>
             </div>
@@ -1409,11 +1409,18 @@ export class TimelineManager {
       };
 
       const handleKeys = (e) => {
-        if (e.code === 'ArrowUp' || e.key === 'ArrowUp') {
+        const isPreviousKey =
+          e.code === 'ArrowUp' || e.key === 'ArrowUp' ||
+          e.code === 'ArrowLeft' || e.key === 'ArrowLeft';
+        const isNextKey =
+          e.code === 'ArrowDown' || e.key === 'ArrowDown' ||
+          e.code === 'ArrowRight' || e.key === 'ArrowRight';
+
+        if (isPreviousKey) {
           e.preventDefault();
           selIndex = Math.max(0, selIndex - 1);
           renderQuestion(false);
-        } else if (e.code === 'ArrowDown' || e.key === 'ArrowDown') {
+        } else if (isNextKey) {
           e.preventDefault();
           selIndex = Math.min(questions[qIndex].options.length - 1, selIndex + 1);
           renderQuestion(false);

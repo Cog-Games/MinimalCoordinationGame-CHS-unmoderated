@@ -1,5 +1,16 @@
 // Map loading and randomization utility based on legacy version
 import { CONFIG } from '../config/gameConfig.js';
+import mapsFor1P1GRaw from '../../../config/MapsFor1P1G.js?raw';
+import mapsFor1P2GRaw from '../../../config/MapsFor1P2G.js?raw';
+import mapsFor2P2GRaw from '../../../config/MapsFor2P2G.js?raw';
+import mapsFor2P3GRaw from '../../../config/MapsFor2P3G.js?raw';
+
+const BUNDLED_MAP_FILES = {
+  '1P1G': mapsFor1P1GRaw,
+  '1P2G': mapsFor1P2GRaw,
+  '2P2G': mapsFor2P2GRaw,
+  '2P3G': mapsFor2P3GRaw
+};
 
 export class MapLoader {
   constructor() {
@@ -11,45 +22,17 @@ export class MapLoader {
     this.mapData = await this.loadMapData();
   }
 
-    // Load map data from server API
+  // Load map data from bundled config files so static GitHub Pages builds work
   async loadMapData() {
-    console.log('🗺️ Loading map data from server...');
-    
-    // Check if server is running first
-    const serverRunning = await this.checkServerHealth();
-    if (!serverRunning) {
-      console.warn('⚠️ Game server not running - using fallback maps for all experiment types');
-      console.log('💡 To get real maps and enable multiplayer, start the server with: npm run dev');
-      return this.loadAllFallbackMaps();
-    }
-    
-    const experimentTypes = ['1P1G', '1P2G', '2P2G', '2P3G'];
+    console.log('🗺️ Loading bundled map data...');
     const maps = {};
     
-    for (const expType of experimentTypes) {
+    for (const [expType, rawMapFile] of Object.entries(BUNDLED_MAP_FILES)) {
       try {
-        console.log(`🌐 Fetching ${expType} maps from server...`);
-        const response = await fetch(`/api/maps/${expType}`);
-        
-        if (response.ok) {
-          const contentType = response.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const data = await response.json();
-            maps[expType] = data.maps;
-            console.log(`✅ Loaded ${data.mapCount} ${expType} maps from server`);
-          } else {
-            throw new Error('Server returned non-JSON response (likely HTML error page)');
-          }
-        } else {
-          console.warn(`⚠️ Server request failed for ${expType} (${response.status}), using fallback`);
-          maps[expType] = this.getFallbackMaps(expType);
-        }
+        maps[expType] = this.parseBundledMapFile(expType, rawMapFile);
+        console.log(`✅ Loaded ${Object.keys(maps[expType]).length} ${expType} maps from bundled config`);
       } catch (error) {
-        if (error.message.includes('<!DOCTYPE')) {
-          console.warn(`⚠️ Server not running or API not available for ${expType}, using fallback maps`);
-        } else {
-          console.warn(`⚠️ Failed to load ${expType} maps from server, using fallback:`, error.message);
-        }
+        console.warn(`⚠️ Failed to load bundled ${expType} maps, using fallback:`, error.message);
         maps[expType] = this.getFallbackMaps(expType);
       }
     }
@@ -63,7 +46,17 @@ export class MapLoader {
     return maps;
   }
 
-  // Legacy loading methods removed - now using server API
+  parseBundledMapFile(experimentType, rawMapFile) {
+    const varName = `MapsFor${experimentType}`;
+    const regex = new RegExp(`var\\s+${varName}\\s*=\\s*({[\\s\\S]*?});`);
+    const match = rawMapFile.match(regex);
+
+    if (!match) {
+      throw new Error(`Could not find ${varName} declaration`);
+    }
+
+    return JSON.parse(match[1]);
+  }
 
   // Fallback generation methods
   generate1P1GMaps() {

@@ -107,10 +107,10 @@ export const CONFIG = {
       order: ['1P1G', '1P2G', '2P2G', '2P3G'], // Full experiment order
 
       numTrials: {
-        '1P1G': 2, // 2
-        '1P2G': 8, // 8
-        '2P2G': 4, // 4
-        '2P3G': 8, // 8
+        '1P1G': 1, // 2
+        '1P2G': 1, // 8
+        '2P2G': 1, // 4
+        '2P3G': 1, // 8
       }
     },
 
