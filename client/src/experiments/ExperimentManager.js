@@ -159,7 +159,7 @@ export class ExperimentManager {
       return;
     }
 
-    const maxTrials = CONFIG.game.experiments.numTrials[experimentType] || 12;
+    const maxTrials = GameConfigUtils.getNumTrials(experimentType) || 12;
 
     // Check if experiment should end early due to success threshold
     if (this.shouldEndExperimentEarly(experimentType)) {

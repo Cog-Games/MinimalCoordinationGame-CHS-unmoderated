@@ -1,4 +1,4 @@
-import { CONFIG, GAME_OBJECTS, DIRECTIONS } from '../config/gameConfig.js';
+import { CONFIG, GAME_OBJECTS, DIRECTIONS, GameConfigUtils } from '../config/gameConfig.js';
 import { GameHelpers } from '../utils/GameHelpers.js';
 
 export class GameStateManager {
@@ -926,7 +926,7 @@ export class GameStateManager {
   getRandomDistanceConditionFor2P3G(trialIndex) {
     // Use or create a balanced sequence for the experiment
     const key = '2P3G';
-    const numTrials = (CONFIG.game.experiments?.numTrials?.[key]) || 12;
+    const numTrials = GameConfigUtils.getNumTrials(key);
     if (!this.conditionSequences[key]) {
       // If human-human mode, use a shared seed so both clients get identical sequences
       const isHumanHuman = (CONFIG?.game?.players?.player2?.type === 'human');
@@ -944,7 +944,7 @@ export class GameStateManager {
 
   getRandomDistanceConditionFor1P2G(trialIndex) {
     const key = '1P2G';
-    const numTrials = (CONFIG.game.experiments?.numTrials?.[key]) || 12;
+    const numTrials = GameConfigUtils.getNumTrials(key);
     if (!this.conditionSequences[key]) {
       this.conditionSequences[key] = this.generateBalancedConditionSequence(
         Object.values(CONFIG.oneP2G.distanceConditions),

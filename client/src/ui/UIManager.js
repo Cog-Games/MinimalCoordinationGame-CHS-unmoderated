@@ -1,4 +1,4 @@
-import { CONFIG, GAME_OBJECTS } from '../config/gameConfig.js';
+import { CONFIG, GAME_OBJECTS, GameConfigUtils } from '../config/gameConfig.js';
 import { GameRenderer } from './GameRenderer.js';
 
 export class UIManager {
@@ -263,10 +263,14 @@ export class UIManager {
     const trialInfo = document.getElementById('trial-info');
 
     if (gameTitle) {
-      const totalRounds = CONFIG?.game?.experiments?.numTrials?.[experimentType] || '';
-      gameTitle.textContent = totalRounds
-        ? `Game ${experimentIndex + 1}: Round ${trialIndex + 1}/${totalRounds}`
+      const totalRounds = GameConfigUtils.getNumTrials(experimentType) || '';
+      const totalGames = CONFIG?.game?.experiments?.order?.length || '';
+      const gameLabel = totalGames
+        ? `Game ${experimentIndex + 1}/${totalGames}`
         : `Game ${experimentIndex + 1}`;
+      gameTitle.textContent = totalRounds
+        ? `${gameLabel}: Round ${trialIndex + 1}/${totalRounds}`
+        : gameLabel;
     }
 
     if (trialInfo) {

@@ -118,7 +118,7 @@ export class TimelineManager {
     const experimentOrder = CONFIG.game.experiments.order;
     for (let expIndex = 0; expIndex < experimentOrder.length; expIndex++) {
       const experimentType = experimentOrder[expIndex];
-      const numTrials = CONFIG.game.experiments.numTrials[experimentType];
+      const numTrials = GameConfigUtils.getNumTrials(experimentType);
 
       console.log(`📋 Adding stages for experiment: ${experimentType}`);
 
@@ -672,9 +672,20 @@ export class TimelineManager {
       }
     }
 
+    const instructionContinuePanel = document.getElementById('instructionContinuePanel');
+    const instructionContinueBtn = document.getElementById('instructionContinueBtn');
     let instructionVideoComplete = !instructionVideo;
+    let instructionAdvanced = false;
     const markInstructionVideoComplete = () => {
       instructionVideoComplete = true;
+      if (instructionContinuePanel) {
+        instructionContinuePanel.style.display = 'block';
+      }
+      if (instructionContinueBtn) {
+        instructionContinueBtn.disabled = false;
+        instructionContinueBtn.style.cursor = 'pointer';
+        instructionContinueBtn.style.opacity = '1';
+      }
     };
 
     if (instructionVideo) {
@@ -688,21 +699,35 @@ export class TimelineManager {
       markInstructionVideoComplete();
     }
 
+    const advanceInstruction = (event) => {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+
+      if (!instructionVideoComplete || instructionAdvanced) return;
+      instructionAdvanced = true;
+      document.removeEventListener('keydown', handleSpacebar, true);
+      if (instructionContinueBtn) {
+        instructionContinueBtn.removeEventListener('click', advanceInstruction);
+      }
+      console.log(`📋 Instructions completed for ${experimentType}`);
+      this.nextStage();
+    };
+
     // Handle spacebar to continue (matching legacy)
     const handleSpacebar = (event) => {
       if (event.code === 'Space' || event.key === ' ') {
         // Use capture + preventDefault so space doesn't play/pause any instruction videos
-        event.preventDefault();
-        event.stopPropagation();
-        if (!instructionVideoComplete) return;
-        document.removeEventListener('keydown', handleSpacebar, true);
-        console.log(`📋 Instructions completed for ${experimentType}`);
-        this.nextStage();
+        advanceInstruction(event);
       }
     };
 
     // Capture phase ensures we intercept before focused elements (like <video>) handle spacebar.
     document.addEventListener('keydown', handleSpacebar, true);
+    if (instructionContinueBtn) {
+      instructionContinueBtn.addEventListener('click', advanceInstruction);
+    }
     document.body.focus();
   }
 
@@ -1069,6 +1094,7 @@ export class TimelineManager {
           <h1 style="color: #28a745; margin-bottom: 30px;">✅ Game is Ready!</h1>
           <div style="margin: 20px 0; text-align: center;">
             <video
+              id="matchPlayVideo"
               width="100%"
               height="400"
               controls
@@ -1085,19 +1111,72 @@ export class TimelineManager {
               You are ${this.playerIndex === 0 ? 'Player 1 (Red)' : 'Player 2 (Orange)'}
               <span style="display:inline-block; width: 14px; height: 14px; background-color: ${this.playerIndex === 0 ? CONFIG.visual.colors.player1 : CONFIG.visual.colors.player2}; border-radius: 50%; vertical-align: middle; margin-left: 6px;"></span>
             </p>
-            <p>Press SPACE to start the game!</p>
-            <p style="font-size: 14px;">${this.isHumanHumanMode() ? 'Both players must press SPACE to begin.' : ''}</p>
+            <div id="matchStartPanel" style="display: none; margin: 24px auto 0; max-width: 480px; background: #f8fbff; border: 2px solid #28a745; border-radius: 12px; padding: 18px 22px; text-align: center;">
+              <p style="margin: 0 0 14px; font-size: 24px; font-weight: 700; color: #333;">Press the spacebar or click here to start the game!</p>
+              <button id="matchStartBtn" type="button" disabled style="background: #28a745; color: white; border: none; padding: 14px 42px; font-size: 22px; font-weight: bold; border-radius: 8px; cursor: not-allowed; opacity: 0.55; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background 0.2s, opacity 0.2s;">
+                Start Game
+              </button>
+              <p style="font-size: 14px; margin: 14px 0 0;">${this.isHumanHumanMode() ? 'Both players must be ready to begin.' : ''}</p>
+              <div id="match-status" style="font-size: 14px; color: #666; display: none; margin-top: 8px;">Waiting for the other player to be ready...</div>
+            </div>
 
-          <div id="match-status" style="font-size: 14px; color: #666; display: none;">Waiting for the other player to press space...</div>
+          </div>
         </div>
       </div>
     `;
 
-    const handleSpacebar = (event) => {
-      if (event.code === 'Space' || event.key === ' ') {
+    const matchVideo = document.getElementById('matchPlayVideo');
+    const matchStartPanel = document.getElementById('matchStartPanel');
+    const matchStartBtn = document.getElementById('matchStartBtn');
+    let matchVideoComplete = false;
+    let matchPlayStarted = false;
+
+    const showMatchStartControls = () => {
+      matchVideoComplete = true;
+      if (matchStartPanel) {
+        matchStartPanel.style.display = 'block';
+      }
+      if (matchStartBtn) {
+        matchStartBtn.disabled = false;
+        matchStartBtn.style.cursor = 'pointer';
+        matchStartBtn.style.opacity = '1';
+      }
+    };
+
+    if (matchVideo) {
+      matchVideo.addEventListener('ended', showMatchStartControls, { once: true });
+      matchVideo.addEventListener('error', showMatchStartControls, { once: true });
+      if (matchVideo.ended) {
+        showMatchStartControls();
+      }
+    } else {
+      showMatchStartControls();
+    }
+
+    const startMatchPlay = (event) => {
+      const isSpaceEvent = event?.type === 'keydown' && (event.code === 'Space' || event.key === ' ');
+      if (event?.type === 'keydown' && !isSpaceEvent) {
+        return;
+      }
+
+      if (event) {
         event.preventDefault();
         event.stopPropagation();
-        document.removeEventListener('keydown', handleSpacebar, true);
+      }
+
+      if (!matchVideoComplete || matchPlayStarted) {
+        return;
+      }
+
+      matchPlayStarted = true;
+      document.removeEventListener('keydown', startMatchPlay, true);
+      if (matchStartBtn) {
+        matchStartBtn.removeEventListener('click', startMatchPlay);
+        matchStartBtn.disabled = true;
+        matchStartBtn.textContent = this.isHumanHumanMode() ? 'Waiting...' : 'Starting...';
+        matchStartBtn.style.cursor = 'default';
+        matchStartBtn.style.opacity = '0.75';
+      }
 
         // Signal match-play readiness
         this.emit('match-play-ready');
@@ -1151,10 +1230,12 @@ export class TimelineManager {
         } else {
           this.nextStage();
         }
-      }
     };
     // Capture phase so space doesn't play/pause the video element.
-    document.addEventListener('keydown', handleSpacebar, true);
+    document.addEventListener('keydown', startMatchPlay, true);
+    if (matchStartBtn) {
+      matchStartBtn.addEventListener('click', startMatchPlay);
+    }
     document.body.focus();
   }
 
@@ -1206,7 +1287,8 @@ export class TimelineManager {
       playerColor = this.playerIndex === 0 ? CONFIG.visual.colors.player1 : CONFIG.visual.colors.player2;
       playerName = this.playerIndex === 0 ? 'Player 1 (Red)' : 'Player 2 (Orange)';
     }
-    const totalRounds = CONFIG?.game?.experiments?.numTrials?.[experimentType] || 1;
+    const totalRounds = GameConfigUtils.getNumTrials(experimentType);
+    const totalGames = CONFIG?.game?.experiments?.order?.length || 1;
 
     // Create trial container with game canvas area
     this.container.innerHTML = `
@@ -1216,7 +1298,7 @@ export class TimelineManager {
         style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 10px 16px 48px; overflow: hidden;"
       >
         <div style="text-align: center; max-width: 800px; width: 100%; display: flex; flex-direction: column; align-items: center;">
-          <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">Game ${experimentIndex + 1}: Round ${trialIndex + 1}/${totalRounds}</h3>
+          <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">Game ${experimentIndex + 1}/${totalGames}: Round ${trialIndex + 1}/${totalRounds}</h3>
           <div id="game-canvas-container" style="margin: 0 auto; position: relative; display: flex; justify-content: center; width: 100%; max-width: 100%;">
             <!-- Game canvas will be inserted here by ExperimentManager -->
           </div>
@@ -1254,7 +1336,8 @@ export class TimelineManager {
     // Get the last trial result
     const trialResult = this.experimentData.experiments[experimentType]?.[trialIndex];
     const success = trialResult?.success || false;
-    const totalRounds = CONFIG?.game?.experiments?.numTrials?.[experimentType] || 1;
+    const totalRounds = GameConfigUtils.getNumTrials(experimentType);
+    const totalGames = CONFIG?.game?.experiments?.order?.length || 1;
 
     // Instead of creating a new page, show feedback as overlay on the current game canvas
     // Find the existing game canvas container
@@ -1273,7 +1356,7 @@ export class TimelineManager {
       this.container.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
           <div style="text-align: center; max-width: 600px; width: 100%;">
-            <h3 style="margin-bottom: 10px;">Game ${experimentIndex + 1}</h3>
+            <h3 style="margin-bottom: 10px;">Game ${experimentIndex + 1}/${totalGames}</h3>
             <h4 style="margin-bottom: 20px;">Round ${trialIndex + 1}/${totalRounds} Results</h4>
             <div id="feedbackCanvasContainer" style="margin: 0 auto 20px auto; position: relative; display: flex; justify-content: center;"></div>
           </div>
@@ -1668,16 +1751,43 @@ export class TimelineManager {
             </video>
           </div>
 
-          <p style="font-size: 20px; color: #333; margin-top: 20px;">
-            When you are ready, press the <span style="background:#f0f0f0; padding:4px 8px; border-radius:4px; font-family:monospace;">spacebar</span> to start the questions.
-          </p>
+          <div id="questionnaireStartPanel" style="display: none; margin: 24px auto 0; max-width: 520px; background: #f8fbff; border: 2px solid #28a745; border-radius: 12px; padding: 18px 22px; text-align: center;">
+            <p style="font-size: 22px; color: #333; font-weight: 700; margin: 0 0 14px;">
+              When you are ready, press the spacebar or click here to start the questions.
+            </p>
+            <button id="questionnaireStartBtn" type="button" disabled style="background: #28a745; color: white; border: none; padding: 14px 42px; font-size: 22px; font-weight: bold; border-radius: 8px; cursor: not-allowed; opacity: 0.55; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background 0.2s, opacity 0.2s;">
+              Start Questions
+            </button>
+          </div>
         </div>
       </div>
     `;
 
     // Autoplay behavior: first try with sound, fall back to muted
     const videoEl = document.getElementById('questionnaireInstructionsVideo');
+    const questionnaireStartPanel = document.getElementById('questionnaireStartPanel');
+    const questionnaireStartBtn = document.getElementById('questionnaireStartBtn');
+    let questionnaireVideoComplete = false;
+
+    const showQuestionnaireStartControls = () => {
+      questionnaireVideoComplete = true;
+      if (questionnaireStartPanel) {
+        questionnaireStartPanel.style.display = 'block';
+      }
+      if (questionnaireStartBtn) {
+        questionnaireStartBtn.disabled = false;
+        questionnaireStartBtn.style.cursor = 'pointer';
+        questionnaireStartBtn.style.opacity = '1';
+      }
+    };
+
     if (videoEl) {
+      videoEl.addEventListener('ended', showQuestionnaireStartControls, { once: true });
+      videoEl.addEventListener('error', showQuestionnaireStartControls, { once: true });
+      if (videoEl.ended) {
+        showQuestionnaireStartControls();
+      }
+
       videoEl.autoplay = true;
       videoEl.playsInline = true;
 
@@ -1712,18 +1822,39 @@ export class TimelineManager {
         document.addEventListener('keydown', enableSoundOnFirstInteraction, { once: true });
         videoEl.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
       });
+    } else {
+      showQuestionnaireStartControls();
     }
 
-    // Spacebar to start the questions
-    const handleSpaceToStart = (event) => {
-      if (event.code === 'Space' || event.key === ' ') {
+    // Spacebar or click to start the questions
+    let questionnaireStarted = false;
+    const startQuestionnaireFromInput = (event) => {
+      const isSpaceEvent = event?.type === 'keydown' && (event.code === 'Space' || event.key === ' ');
+      if (event?.type === 'keydown' && !isSpaceEvent) {
+        return;
+      }
+
+      if (event) {
         event.preventDefault();
         event.stopPropagation();
-        document.removeEventListener('keydown', handleSpaceToStart, true);
-        startQuestionnaire();
       }
+
+      if (!questionnaireVideoComplete || questionnaireStarted) return;
+      questionnaireStarted = true;
+      document.removeEventListener('keydown', startQuestionnaireFromInput, true);
+      if (questionnaireStartBtn) {
+        questionnaireStartBtn.removeEventListener('click', startQuestionnaireFromInput);
+        questionnaireStartBtn.disabled = true;
+        questionnaireStartBtn.textContent = 'Starting...';
+        questionnaireStartBtn.style.cursor = 'default';
+        questionnaireStartBtn.style.opacity = '0.75';
+      }
+      startQuestionnaire();
     };
-    document.addEventListener('keydown', handleSpaceToStart, true);
+    document.addEventListener('keydown', startQuestionnaireFromInput, true);
+    if (questionnaireStartBtn) {
+      questionnaireStartBtn.addEventListener('click', startQuestionnaireFromInput);
+    }
     document.body.focus();
   }
 
@@ -1915,7 +2046,7 @@ export class TimelineManager {
                 ${renderInstructionList(items)}
               </div>
 
-              <div style="flex: 1 1 420px; min-width: 300px; display: flex; align-items: center; justify-content: center;">
+              <div style="flex: 1 1 420px; min-width: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
                 <video
                   id="${videoId}"
                   width="100%"
@@ -1927,6 +2058,14 @@ export class TimelineManager {
                   <source src="${this.assetUrl(videoSrc)}" type="video/mp4">
                   Your browser does not support the video tag.
                 </video>
+                <div id="instructionContinuePanel" style="display: none; box-sizing: border-box; width: 100%; margin-top: 14px; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 16px 18px; text-align: center;">
+                  <p style="font-size: 18px; color: #1f2937; font-weight: bold; line-height: 1.35; margin: 0 0 14px;">
+                    Press the spacebar or click here to continue!
+                  </p>
+                  <button id="instructionContinueBtn" type="button" disabled style="background: #28a745; color: white; border: none; padding: 14px 42px; font-size: 20px; font-weight: bold; border-radius: 8px; cursor: not-allowed; opacity: 0.55; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background 0.2s, opacity 0.2s;">
+                    Continue
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2194,7 +2333,7 @@ export class TimelineManager {
   shouldContinueToNextTrial(experimentType, trialIndex) {
     // Only apply to collaboration games
     if (!experimentType.includes('2P')) {
-      return trialIndex < CONFIG.game.experiments.numTrials[experimentType] - 1;
+      return trialIndex < GameConfigUtils.getNumTrials(experimentType) - 1;
     }
 
     // Check if experiment should end due to success threshold
@@ -2204,7 +2343,7 @@ export class TimelineManager {
     }
 
     // Check if we've reached the configured number of trials for this specific experiment
-    const maxTrials = CONFIG.game.experiments.numTrials[experimentType] || CONFIG.game.successThreshold.maxTrials;
+    const maxTrials = GameConfigUtils.getNumTrials(experimentType) || CONFIG.game.successThreshold.maxTrials;
     if (trialIndex >= maxTrials - 1) {
       console.log(`Ending ${experimentType} experiment: Completed ${maxTrials} trials`);
       return false;

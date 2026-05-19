@@ -354,7 +354,51 @@ export const GameConfigUtils = {
     CONFIG.game.experiments.order = order;
   },
 
+  getUrlParam(names) {
+    try {
+      if (typeof window === 'undefined' || !window.location) return '';
+      const params = new URLSearchParams(window.location.search);
+      for (const name of names) {
+        const value = params.get(name);
+        if (value) return value;
+      }
+    } catch (_) {
+      // Ignore URL parsing failures outside the browser.
+    }
+    return '';
+  },
+
+  getBooleanUrlParam(names) {
+    const value = this.getUrlParam(names).toLowerCase();
+    return ['1', 'true', 'yes', 'y'].includes(value);
+  },
+
+  getTestTrialOverride() {
+    const explicitTrials = Number.parseInt(this.getUrlParam([
+      'testTrials',
+      'numTestTrials',
+      'trialCount'
+    ]), 10);
+
+    if (Number.isInteger(explicitTrials) && explicitTrials > 0) {
+      return explicitTrials;
+    }
+
+    const shortTestMode = this.getBooleanUrlParam([
+      'skipDob',
+      'skipDOB',
+      'shortTest',
+      'oneTrial',
+      'singleTrial',
+      'testMode'
+    ]);
+
+    return shortTestMode ? 1 : null;
+  },
+
   getNumTrials(experimentType) {
+    const testTrialOverride = this.getTestTrialOverride();
+    if (testTrialOverride) return testTrialOverride;
     return CONFIG.game.experiments.numTrials[experimentType] || 12;
   },
 
