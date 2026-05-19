@@ -15,6 +15,8 @@ export class TimelineManager {
     this.waitingTimes = []; // Store waiting time records for export
     this.experimentData = {
       participantId: this.getParticipantId(),
+      lookitResponseId: this.getLookitResponseId(),
+      lookitChildId: this.getLookitChildId(),
       startTime: new Date().toISOString(),
       // consentTime: null,
       experiments: {},
@@ -1837,14 +1839,51 @@ export class TimelineManager {
     return 'P' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   }
 
-  getParticipantId() {
+  getUrlParam(names) {
     try {
       const params = new URLSearchParams(window.location.search);
-      const prolific = params.get('PROLIFIC_PID') || params.get('prolific_pid');
-      if (prolific) return prolific;
+      for (const name of names) {
+        const value = params.get(name);
+        if (value) return value;
+      }
     } catch (e) {
       // ignore
     }
+    return '';
+  }
+
+  getLookitResponseId() {
+    return this.getUrlParam([
+      'response',
+      'responseId',
+      'lookit_response',
+      'lookitResponseId',
+      'LOOKIT_RESPONSE_ID'
+    ]);
+  }
+
+  getLookitChildId() {
+    return this.getUrlParam([
+      'child',
+      'childId',
+      'lookit_child',
+      'lookitChildId',
+      'LOOKIT_CHILD_ID'
+    ]);
+  }
+
+  getParticipantId() {
+    const explicitParticipantId = this.getUrlParam([
+      'PROLIFIC_PID',
+      'prolific_pid',
+      'participantId',
+      'participant_id'
+    ]);
+    if (explicitParticipantId) return explicitParticipantId;
+
+    const lookitResponseId = this.getLookitResponseId();
+    if (lookitResponseId) return lookitResponseId;
+
     return this.generateParticipantId();
   }
 

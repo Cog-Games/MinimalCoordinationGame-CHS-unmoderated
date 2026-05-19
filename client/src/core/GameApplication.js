@@ -373,11 +373,44 @@ export class GameApplication {
       // Pull comprehensive trial data from GameStateManager (legacy: allTrialsData)
       const gsData = this.gameStateManager?.getExperimentData?.() || { allTrialsData: [], successThreshold: {} };
 
-      // Participant ID: prefer existing, else try Prolific PID from URL
+      let urlParams = null;
+      const getUrlParam = (names) => {
+        try {
+          urlParams = urlParams || new URLSearchParams(window.location.search);
+          for (const name of names) {
+            const value = urlParams.get(name);
+            if (value) return value;
+          }
+        } catch (_) {
+          // ignore
+        }
+        return '';
+      };
+
+      const lookitResponseId = data.lookitResponseId || getUrlParam([
+        'response',
+        'responseId',
+        'lookit_response',
+        'lookitResponseId',
+        'LOOKIT_RESPONSE_ID'
+      ]);
+      const lookitChildId = data.lookitChildId || getUrlParam([
+        'child',
+        'childId',
+        'lookit_child',
+        'lookitChildId',
+        'LOOKIT_CHILD_ID'
+      ]);
+
+      // Participant ID: prefer existing, else try Prolific PID, then Lookit response ID
       let participantId = data.participantId;
       if (!participantId) {
-        const params = new URLSearchParams(window.location.search);
-        participantId = params.get('PROLIFIC_PID') || params.get('prolific_pid') || `participant_${Date.now()}`;
+        participantId = getUrlParam([
+          'PROLIFIC_PID',
+          'prolific_pid',
+          'participantId',
+          'participant_id'
+        ]) || lookitResponseId || `participant_${Date.now()}`;
       }
 
       // Determine room id (from runtime or payload)
@@ -386,6 +419,8 @@ export class GameApplication {
       // Legacy-compatible export object
       const exportObj = {
         participantId,
+        lookitResponseId,
+        lookitChildId,
         timestamp: new Date().toISOString(),
         experimentOrder: (CONFIG?.game?.experiments?.order) || [],
         allTrialsData: gsData.allTrialsData || [],
@@ -429,6 +464,9 @@ export class GameApplication {
               o.roomId = exportObj.roomId || '';
               // Add participantId per row for easier analysis join
               o.participantId = exportObj.participantId;
+              // Lookit join keys from exp-lookit-iframe query parameters
+              o.lookitResponseId = exportObj.lookitResponseId || '';
+              o.lookitChildId = exportObj.lookitChildId || '';
               // Add current player number (1 or 2) for human-human mode analysis
               o.currentPlayer = (this.playerIndex !== undefined) ? (this.playerIndex + 1) : null;
               // Legacy naming: prefer distanceCondition in exports
@@ -447,7 +485,7 @@ export class GameApplication {
             // Prefer a sensible column order for readability; include common fields first if present
             const preferredOrder = [
               'trialIndex', 'experimentType', 'partnerAgentType',
-              'currentPlayer', 'participantId', 'roomId',
+              'currentPlayer', 'participantId', 'lookitResponseId', 'lookitChildId', 'roomId',
               'humanPlayerIndex', 'aiPlayerIndex',
               'player1StartPosition', 'player2StartPosition', 'initialGoalPositions',
               'partnerFallbackOccurred', 'partnerFallbackReason', 'partnerFallbackStage', 'partnerFallbackTime',
@@ -518,6 +556,8 @@ export class GameApplication {
 
           const metaRows = [
             ['participantId', exportObj.participantId],
+            ['lookitResponseId', exportObj.lookitResponseId || ''],
+            ['lookitChildId', exportObj.lookitChildId || ''],
             ['roomId', exportObj.roomId || ''],
             ['experimentOrder', JSON.stringify(exportObj.experimentOrder || [])],
             ['experimentType', exportObj.experimentType],
