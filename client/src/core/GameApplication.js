@@ -425,6 +425,12 @@ export class GameApplication {
         experimentOrder: (CONFIG?.game?.experiments?.order) || [],
         allTrialsData: gsData.allTrialsData || [],
         questionnaireData: data.questionnaire || null,
+        participantDob: data.participantDob || null,
+        participantAgeReferenceDate: data.participantAgeReferenceDate || null,
+        participantAgeYears: data.participantAgeYears ?? null,
+        participantAgeMonths: data.participantAgeMonths ?? null,
+        participantAgeDays: data.participantAgeDays ?? null,
+        participantAgeTotalDays: data.participantAgeTotalDays ?? null,
         successThreshold: gsData.successThreshold || {},
         completionCode: data.completionCode || '',
         version: (CONFIG?.game?.version) || '2.0.0',
@@ -467,6 +473,12 @@ export class GameApplication {
               // Lookit join keys from exp-lookit-iframe query parameters
               o.lookitResponseId = exportObj.lookitResponseId || '';
               o.lookitChildId = exportObj.lookitChildId || '';
+              o.participantDob = exportObj.participantDob || '';
+              o.participantAgeReferenceDate = exportObj.participantAgeReferenceDate || '';
+              o.participantAgeYears = exportObj.participantAgeYears ?? '';
+              o.participantAgeMonths = exportObj.participantAgeMonths ?? '';
+              o.participantAgeDays = exportObj.participantAgeDays ?? '';
+              o.participantAgeTotalDays = exportObj.participantAgeTotalDays ?? '';
               // Add current player number (1 or 2) for human-human mode analysis
               o.currentPlayer = (this.playerIndex !== undefined) ? (this.playerIndex + 1) : null;
               // Legacy naming: prefer distanceCondition in exports
@@ -486,6 +498,8 @@ export class GameApplication {
             const preferredOrder = [
               'trialIndex', 'experimentType', 'partnerAgentType',
               'currentPlayer', 'participantId', 'lookitResponseId', 'lookitChildId', 'roomId',
+              'participantDob', 'participantAgeReferenceDate',
+              'participantAgeYears', 'participantAgeMonths', 'participantAgeDays', 'participantAgeTotalDays',
               'humanPlayerIndex', 'aiPlayerIndex',
               'player1StartPosition', 'player2StartPosition', 'initialGoalPositions',
               'partnerFallbackOccurred', 'partnerFallbackReason', 'partnerFallbackStage', 'partnerFallbackTime',
@@ -558,6 +572,12 @@ export class GameApplication {
             ['participantId', exportObj.participantId],
             ['lookitResponseId', exportObj.lookitResponseId || ''],
             ['lookitChildId', exportObj.lookitChildId || ''],
+            ['participantDob', exportObj.participantDob || ''],
+            ['participantAgeReferenceDate', exportObj.participantAgeReferenceDate || ''],
+            ['participantAgeYears', exportObj.participantAgeYears ?? ''],
+            ['participantAgeMonths', exportObj.participantAgeMonths ?? ''],
+            ['participantAgeDays', exportObj.participantAgeDays ?? ''],
+            ['participantAgeTotalDays', exportObj.participantAgeTotalDays ?? ''],
             ['roomId', exportObj.roomId || ''],
             ['experimentOrder', JSON.stringify(exportObj.experimentOrder || [])],
             ['experimentType', exportObj.experimentType],

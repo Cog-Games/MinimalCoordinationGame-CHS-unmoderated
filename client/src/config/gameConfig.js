@@ -107,10 +107,10 @@ export const CONFIG = {
       order: ['1P1G', '1P2G', '2P2G', '2P3G'], // Full experiment order
 
       numTrials: {
-        '1P1G': 1, // 2
-        '1P2G': 1, // 8
-        '2P2G': 1, // 4
-        '2P3G': 1, // 8
+        '1P1G': 2, // 2
+        '1P2G': 8, // 8
+        '2P2G': 4, // 4
+        '2P3G': 8, // 8
       }
     },
 
@@ -134,8 +134,8 @@ export const CONFIG = {
       // Legacy behavior had no time cap; only step-based via maxGameLength.
       maxTrialDurationMs: 60 * 1000,
       // Minimum and maximum time to wait for partner (ms)
-      waitingForPartnerMinDuration: 3 * 1000, // 9*1000, 9s
-      waitingForPartnerMaxDuration: 3 * 1000 // 300*1000, 5mins
+      waitingForPartnerMinDuration: 9 * 1000, // 9*1000, 9s
+      waitingForPartnerMaxDuration: 9 * 1000 // 300*1000, 5mins
     },
 
     // AI agent settings

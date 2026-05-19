@@ -21,6 +21,12 @@ export class TimelineManager {
       // consentTime: null,
       experiments: {},
       questionnaire: {},
+      participantDob: null,
+      participantAgeReferenceDate: null,
+      participantAgeYears: null,
+      participantAgeMonths: null,
+      participantAgeDays: null,
+      participantAgeTotalDays: null,
       totalScore: 0,
       completed: false
     };
@@ -261,7 +267,10 @@ export class TimelineManager {
    */
   start() {
     this.createTimelineStages();
-    this.currentStageIndex = 0;
+    this.currentStageIndex = this.shouldSkipDobInput() ? 1 : 0;
+    if (this.currentStageIndex === 1) {
+      console.log('🧪 DOB input skipped by test URL parameter');
+    }
     this.runCurrentStage();
   }
 
@@ -379,15 +388,53 @@ export class TimelineManager {
   showStartStage() {
     this.container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
-        <div style="text-align: center;">
-          <button id="startBtn" style="background: #28a745; color: white; border: none; padding: 20px 60px; font-size: 24px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background 0.3s;">
-            Start
-          </button>
+        <div style="background: white; padding: 36px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 560px; width: calc(100% - 40px); text-align: center;">
+          <h2 style="color: #333; margin: 0 0 12px; font-size: 28px;">Welcome to the Game!</h2>
+          <p style="font-size: 16px; color: #444; line-height: 1.5; margin: 0 0 24px;">
+            Please enter your kid's date of birth to start the game.
+          </p>
+
+          <form id="dobStartForm" style="display: flex; flex-direction: column; gap: 18px; align-items: stretch;">
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; text-align: left;">
+              <label style="font-weight: bold; color: #333;">
+                Month
+                <select id="dobMonth" required style="width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #bbb; border-radius: 6px; font-size: 16px; background: white;">
+                  <option value="">Month</option>
+                  ${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('')}
+                </select>
+              </label>
+              <label style="font-weight: bold; color: #333;">
+                Day
+                <select id="dobDay" required style="width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #bbb; border-radius: 6px; font-size: 16px; background: white;">
+                  <option value="">Day</option>
+                  ${Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('')}
+                </select>
+              </label>
+              <label style="font-weight: bold; color: #333;">
+                Year
+                <select id="dobYear" required style="width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #bbb; border-radius: 6px; font-size: 16px; background: white;">
+                  <option value="">Year</option>
+                  ${Array.from({ length: 2024 - 2018 + 1 }, (_, i) => 2018 + i).map(year => `<option value="${year}">${year}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+
+            <div id="dobError" role="alert" style="min-height: 22px; color: #dc3545; font-size: 15px; text-align: center;"></div>
+
+            <button id="startBtn" type="submit" style="align-self: center; background: #28a745; color: white; border: none; padding: 16px 52px; font-size: 22px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background 0.3s;">
+              Start
+            </button>
+          </form>
         </div>
       </div>
     `;
 
+    const form = document.getElementById('dobStartForm');
     const startBtn = document.getElementById('startBtn');
+    const errorEl = document.getElementById('dobError');
+    const setError = (message) => {
+      if (errorEl) errorEl.textContent = message || '';
+    };
     
     startBtn.addEventListener('mouseenter', () => {
       startBtn.style.background = '#218838';
@@ -397,58 +444,160 @@ export class TimelineManager {
       startBtn.style.background = '#28a745';
     });
 
-    startBtn.addEventListener('click', () => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const year = Number(document.getElementById('dobYear')?.value);
+      const month = Number(document.getElementById('dobMonth')?.value);
+      const day = Number(document.getElementById('dobDay')?.value);
+      const dob = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const ageInfo = this.calculateAgeFromDob(dob, new Date());
+
+      if (!ageInfo) {
+        setError('Please enter a real date of birth that is not in the future.');
+        return;
+      }
+
+      Object.assign(this.experimentData, ageInfo);
       this.nextStage();
     });
+
+    document.getElementById('dobMonth')?.focus();
   }
 
   showWelcomeInfoStage() {
     this.container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
-        <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 800px; text-align: center;">
-          <h2 style="color: #333; margin-bottom: 30px; font-size: 36px;">Welcome to the Game!</h2>
+        <style>
+          @keyframes welcomeArrowBounce {
+            0%, 100% { transform: translate(-50%, -5px); }
+            50% { transform: translate(-50%, 7px); }
+          }
+        </style>
+        <div style="background: white; padding: 36px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: calc(100% - 48px); max-width: 1120px; text-align: center;">
+          <h2 style="color: #333; margin: 0 0 24px; font-size: 36px;">Welcome to the Game!</h2>
           
-          <div style="margin: 20px 0; text-align: center;">
-            <video 
-              id="welcomeVideo"
-              width="100%" 
-              height="400" 
-              controls
-              autoPlay
-              muted
-              playsInline
-              style="max-width: 600px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <source src="${this.assetUrl('video1.mp4')}" type="video/mp4">
-              Your browser does not support the video tag.
-            </video>
-          </div>
-  
-          <div style="margin-top: 30px;">
-            <p style="font-size: 22px; font-weight: bold; color: #333; margin-bottom: 20px;">
-              Press the <span style="background: #f0f0f0; padding: 4px 8px; border-radius: 4px; font-family: monospace;">spacebar</span> to continue!
-            </p>
+          <div style="display: flex; justify-content: center; align-items: stretch; gap: 24px; flex-wrap: wrap; margin: 0 auto;">
+            <div style="flex: 1 1 640px; min-width: 0; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 18px; text-align: center;">
+              <h3 style="color: #1f2937; margin: 0 0 16px; font-size: 22px; line-height: 1.3;">
+                <span style="display: block;">Hungry travelers need to reach restaurants</span>
+                <span style="display: block;">as quickly as possible!</span>
+              </h3>
+              <div style="display: flex; justify-content: center; align-items: center; gap: 22px; flex-wrap: wrap;">
+                <div style="display: flex; justify-content: center; align-items: center; gap: 18px; flex-wrap: wrap;">
+                  <div aria-label="Example game map" style="display: grid; grid-template-columns: repeat(5, 36px); grid-template-rows: repeat(5, 36px); gap: 3px; border: 2px solid #2f3a4a; padding: 7px; background: white; border-radius: 9px; box-shadow: 0 4px 10px rgba(0,0,0,0.06);">
+                    ${Array.from({ length: 25 }, (_, i) => {
+                      const goal = i === 3;
+                      const player = i === 11;
+                      const bg = goal ? '#007bff' : (player ? 'red' : '#f8f9fa');
+                      const radius = goal ? '4px' : (player ? '50%' : '0');
+                      const shadow = player ? 'box-shadow: 0 2px 5px rgba(255,0,0,0.25);' : '';
+                      return `<div style="background: ${bg}; border: 1px solid #d7dde6; border-radius: ${radius}; ${shadow}"></div>`;
+                    }).join('')}
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 10px; font-size: 18px; color: #333; text-align: left;">
+                    <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 20px; height: 20px; background: red; border-radius: 50%;"></div><span>Traveler</span></div>
+                    <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 20px; height: 20px; background: #007bff; border-radius: 4px;"></div><span>Restaurant</span></div>
+                  </div>
+                </div>
+
+                <div style="display: flex; justify-content: center; align-items: center;">
+                  <div style="display: grid; grid-template-columns: 220px 176px; grid-template-rows: 54px 54px 24px; column-gap: 18px; row-gap: 7px; align-items: start; justify-content: center;">
+                    <div aria-label="Space bar" style="grid-column: 1; grid-row: 2; position: relative; width: 220px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 18px; font-weight: bold; letter-spacing: 1px; color: #222;">
+                      <div id="welcomeSpacebarPrompt" aria-hidden="true" style="display: none; position: absolute; left: 50%; top: -56px; width: 34px; height: 50px; pointer-events: none; animation: welcomeArrowBounce 0.8s ease-in-out infinite;">
+                        <div style="width: 6px; height: 32px; margin: 0 auto; background: #28a745; border-radius: 999px;"></div>
+                        <div style="width: 0; height: 0; margin: -1px auto 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-top: 18px solid #28a745;"></div>
+                      </div>
+                      SPACE BAR
+                    </div>
+                    <div style="grid-column: 1; grid-row: 3; color: #475467; font-size: 15px; text-align: center;">start or continue</div>
+                    <div aria-label="Arrow keys" style="grid-column: 2; grid-row: 1 / span 2; display: grid; grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(2, 54px); gap: 7px;">
+                      <div></div>
+                      <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&uarr;</div>
+                      <div></div>
+                      <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&larr;</div>
+                      <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&darr;</div>
+                      <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&rarr;</div>
+                    </div>
+                    <div style="grid-column: 2; grid-row: 3; color: #475467; font-size: 15px; text-align: center;">move your traveler</div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <div style="flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; justify-content: center;">
+              <video 
+                id="welcomeVideo"
+                width="100%" 
+                height="360"
+                controls
+                autoPlay
+                playsInline
+                style="display: block; width: 100%; height: auto; max-height: 420px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background: #000;">
+                <source src="${this.assetUrl('video1.mp4')}" type="video/mp4">
+                Your browser does not support the video tag.
+              </video>
+            </div>
           </div>
         </div>
       </div>
     `;
 
-    // Turn sound on with the very first user interaction (click/tap or key press)
+    // Start the welcome video with sound. If autoplay audio is blocked, keep the video playing
+    // and retry sound on the next user interaction.
     const welcomeVideo = document.getElementById('welcomeVideo');
-    const enableSoundOnFirstInteraction = () => {
-      if (!welcomeVideo) return;
+    const spacebarPrompt = document.getElementById('welcomeSpacebarPrompt');
+    let welcomeVideoComplete = !welcomeVideo;
+    const showSpacebarPrompt = () => {
+      welcomeVideoComplete = true;
+      if (spacebarPrompt) {
+        spacebarPrompt.style.display = 'block';
+      }
+    };
+
+    if (welcomeVideo) {
+      welcomeVideo.addEventListener('ended', showSpacebarPrompt, { once: true });
+      // Do not trap participants if the video cannot load.
+      welcomeVideo.addEventListener('error', showSpacebarPrompt, { once: true });
+      if (welcomeVideo.ended) {
+        showSpacebarPrompt();
+      }
+    } else {
+      showSpacebarPrompt();
+    }
+
+    if (welcomeVideo) {
+      welcomeVideo.autoplay = true;
+      welcomeVideo.playsInline = true;
+      welcomeVideo.defaultMuted = false;
       welcomeVideo.muted = false;
       welcomeVideo.volume = 1;
-      welcomeVideo.play().catch((err) => {
-        console.warn('Unable to start video with sound:', err);
+
+      const tryPlayWithSound = () => {
+        welcomeVideo.muted = false;
+        welcomeVideo.volume = 1;
+        return welcomeVideo.play();
+      };
+
+      const enableSoundOnFirstInteraction = () => {
+        tryPlayWithSound().catch((err) => {
+          console.warn('Unable to start welcome video with sound after interaction:', err);
+        });
+        document.removeEventListener('click', enableSoundOnFirstInteraction);
+        document.removeEventListener('keydown', enableSoundOnFirstInteraction);
+        welcomeVideo.removeEventListener('click', enableSoundOnFirstInteraction);
+      };
+
+      tryPlayWithSound().catch((err) => {
+        console.warn('Unable to autoplay welcome video with sound, falling back to muted:', err);
+        welcomeVideo.muted = true;
+        welcomeVideo.play().catch((err2) => {
+          console.warn('Unable to autoplay muted welcome video:', err2);
+        });
+        document.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
+        document.addEventListener('keydown', enableSoundOnFirstInteraction, { once: true });
+        welcomeVideo.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
       });
-      document.removeEventListener('click', enableSoundOnFirstInteraction);
-      document.removeEventListener('keydown', enableSoundOnFirstInteraction);
-      welcomeVideo.removeEventListener('click', enableSoundOnFirstInteraction);
-    };
-    document.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
-    document.addEventListener('keydown', enableSoundOnFirstInteraction, { once: true });
-    if (welcomeVideo) {
-      welcomeVideo.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
     }
 
     // Handle spacebar to continue (matching legacy)
@@ -457,6 +606,7 @@ export class TimelineManager {
         // Use capture + preventDefault so space doesn't play/pause the video
         event.preventDefault();
         event.stopPropagation();
+        if (!welcomeVideoComplete) return;
         document.removeEventListener('keydown', handleSpacebar, true);
         console.log('🎮 Starting game sequence');
         this.nextStage();
@@ -476,8 +626,9 @@ export class TimelineManager {
     // For Game 1, Game 2, Game 3 and Game 4 instruction videos:
     // - First try to autoplay WITH sound (by this point the child has already interacted with the page)
     // - If the browser blocks that, fall back to muted autoplay and enable sound on first interaction
+    let instructionVideo = null;
     if (experimentType === '1P1G' || experimentType === '1P2G' || experimentType === '2P2G' || experimentType === '2P3G') {
-      const instructionVideo =
+      instructionVideo =
         document.getElementById('game1Video') ||
         document.getElementById('game2Video') ||
         document.getElementById('game3Video') ||
@@ -521,12 +672,29 @@ export class TimelineManager {
       }
     }
 
+    let instructionVideoComplete = !instructionVideo;
+    const markInstructionVideoComplete = () => {
+      instructionVideoComplete = true;
+    };
+
+    if (instructionVideo) {
+      instructionVideo.addEventListener('ended', markInstructionVideoComplete, { once: true });
+      // Do not trap participants if the video cannot load.
+      instructionVideo.addEventListener('error', markInstructionVideoComplete, { once: true });
+      if (instructionVideo.ended) {
+        markInstructionVideoComplete();
+      }
+    } else {
+      markInstructionVideoComplete();
+    }
+
     // Handle spacebar to continue (matching legacy)
     const handleSpacebar = (event) => {
       if (event.code === 'Space' || event.key === ' ') {
         // Use capture + preventDefault so space doesn't play/pause any instruction videos
         event.preventDefault();
         event.stopPropagation();
+        if (!instructionVideoComplete) return;
         document.removeEventListener('keydown', handleSpacebar, true);
         console.log(`📋 Instructions completed for ${experimentType}`);
         this.nextStage();
@@ -1709,7 +1877,7 @@ export class TimelineManager {
   }
 
   assetUrl(path) {
-    const base = import.meta.env.BASE_URL || '/';
+    const base = import.meta.env?.BASE_URL || '/';
     const normalizedPath = String(path || '').replace(/^\/+/, '');
     return `${base}${normalizedPath}`;
   }
@@ -1719,107 +1887,101 @@ export class TimelineManager {
     const game1TitleColor =
       CONFIG?.game?.studyRLCondition === 'individual' ? '#2563eb' : '#dc2626';
 
+    const travelerDot = '<span style="display:inline-block;width:20px;height:20px;background:red;border-radius:50%;vertical-align:middle;margin:0 4px;"></span>';
+    const restaurantBox = '<span style="display:inline-block;width:20px;height:20px;background:#007bff;border-radius:3px;vertical-align:middle;margin:0 4px;"></span>';
+    const renderInstructionList = (items) => `
+      <ul style="font-size: 22px; color: #1f2937; margin: 0; line-height: 1.55; text-align: left; padding-left: 24px;">
+        ${items.map(item => `<li style="margin-bottom: 10px;">${item}</li>`).join('')}
+      </ul>
+    `;
+    const renderVideoInstruction = ({
+      title,
+      titleColor = '#333',
+      subtitle,
+      intro = '',
+      items,
+      videoId,
+      videoSrc
+    }) => ({
+      html: `
+        <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 24px;">
+          <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: calc(100% - 24px); max-width: 1120px; text-align: center;">
+            <h2 style="color: ${titleColor}; margin: 0 0 12px; font-size: 36px;">${title}</h2>
+            <h3 style="color: #000; margin: 0 0 22px; font-size: 24px;">${subtitle}</h3>
+
+            <div style="display: flex; justify-content: center; align-items: stretch; gap: 24px; flex-wrap: wrap;">
+              <div style="flex: 1 1 420px; min-width: 300px; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 28px; display: flex; flex-direction: column; justify-content: center;">
+                ${intro ? `<p style="font-size: 22px; color: #1f2937; margin: 0 0 16px; line-height: 1.55; text-align: left;">${intro}</p>` : ''}
+                ${renderInstructionList(items)}
+              </div>
+
+              <div style="flex: 1 1 420px; min-width: 300px; display: flex; align-items: center; justify-content: center;">
+                <video
+                  id="${videoId}"
+                  width="100%"
+                  height="360"
+                  controls
+                  autoplay
+                  playsinline
+                  style="display: block; width: 100%; height: auto; max-height: 420px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background: #000;">
+                  <source src="${this.assetUrl(videoSrc)}" type="video/mp4">
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            </div>
+          </div>
+        </div>
+      `
+    });
+
     const instructions = {
-      '1P1G': {
-        html: `
-          <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
-            <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 800px; text-align: center;">
-              <h2 style="color: ${game1TitleColor}; margin-bottom: 30px; font-size: 36px;">Game 1</h2>
-              <h3 style="color: #000; margin-bottom: 20px; font-size: 24px;">Before we begin, let's practice a few rounds!</h3>
-              <div style="margin: 20px 0; text-align: center;">
-                <video 
-                  id="game1Video"
-                  width="100%" 
-                  height="400" 
-                  controls
-                  autoplay
-                  muted
-                  playsinline
-                  style="max-width: 600px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                  <source src="${this.assetUrl('game1.mp4')}" type="video/mp4">
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-              <p style="font-size: 22px; margin-top: 30px;">Press <strong>space bar</strong> to begin.</p>
-            </div>
-          </div>
-        `
-      },
-      '1P2G': {
-        html: `
-          <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
-            <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 800px; text-align: center;">
-              <h2 style="color: #333; margin-bottom: 30px; font-size: 36px;">Game 2</h2>
-              <h3 style="color: #000; margin-bottom: 20px; font-size: 24px;">Great job!</h3>
-              <div style="margin: 20px 0; text-align: center;">
-                <video 
-                  id="game2Video"
-                  width="100%" 
-                  height="400" 
-                  controls
-                  autoplay
-                  muted
-                  playsinline
-                  style="max-width: 600px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                  <source src="${this.assetUrl('game2.mp4')}" type="video/mp4">
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-              <p style="font-size: 22px; margin-top: 30px;">Press <strong>space bar</strong> to begin.</p>
-            </div>
-          </div>
-        `
-      },
-      '2P2G': {
-        html: `
-          <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
-            <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 800px; text-align: center;">
-              <h2 style="color: #333; margin-bottom: 30px; font-size: 36px;">Game 3</h2>
-              <h3 style="color: #000; margin-bottom: 20px; font-size: 24px;">Well done!</h3>
-              <div style="margin: 20px 0; text-align: center;">
-                <video 
-                  id="game3Video"
-                  width="100%" 
-                  height="400" 
-                  controls
-                  autoplay
-                  muted
-                  playsinline
-                  style="max-width: 600px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                  <source src="${this.assetUrl('game3.mp4')}" type="video/mp4">
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-              <p style="font-size: 22px; margin-top: 30px;">Press <strong>space bar</strong> to begin.</p>
-            </div>
-          </div>
-        `
-      },
-      '2P3G': {
-        html: `
-          <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
-            <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 800px; text-align: center;">
-              <h2 style="color: #333; margin-bottom: 30px; font-size: 36px;">Game 4</h2>
-              <h3 style="color: #000; margin-bottom: 20px; font-size: 24px;">Good job!</h3>
-              <div style="margin: 20px 0; text-align: center;">
-                <video 
-                  id="game4Video"
-                  width="100%" 
-                  height="400" 
-                  controls
-                  autoplay
-                  muted
-                  playsinline
-                  style="max-width: 600px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                  <source src="${this.assetUrl('video2.mp4')}" type="video/mp4">
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-              <p style="font-size: 22px; margin-top: 30px;">Press <strong>space bar</strong> to begin.</p>
-            </div>
-          </div>
-        `
-      }
+      '1P1G': renderVideoInstruction({
+        title: 'Game 1',
+        titleColor: game1TitleColor,
+        subtitle: "Before we begin, let's practice a few rounds!",
+        videoId: 'game1Video',
+        videoSrc: 'game1.mp4',
+        items: [
+          `You are the traveler ${travelerDot}.`,
+          `There is one restaurant ${restaurantBox} on the map.`,
+          'Use the arrow keys to reach the restaurant.'
+        ]
+      }),
+      '1P2G': renderVideoInstruction({
+        title: 'Game 2',
+        subtitle: 'Great job!',
+        videoId: 'game2Video',
+        videoSrc: 'game2.mp4',
+        intro: 'Now there will be several identical restaurants on the map.',
+        items: [
+          'Each round, you can win by getting to one of the restaurants.',
+          'Some restaurants are open when the round starts. Others may appear later.'
+        ]
+      }),
+      '2P2G': renderVideoInstruction({
+        title: 'Game 3',
+        subtitle: 'Well done!',
+        videoId: 'game3Video',
+        videoSrc: 'game3.mp4',
+        intro: 'In this game, you will work with a teammate.',
+        items: [
+          'Each round, you win if both players go to the same restaurant.',
+          'You lose the round if you end up at different restaurants.',
+          'Both players move one step at a time after both players choose a direction.'
+        ]
+      }),
+      '2P3G': renderVideoInstruction({
+        title: 'Game 4',
+        subtitle: 'Good job!',
+        videoId: 'game4Video',
+        videoSrc: 'video2.mp4',
+        intro: 'Now you will work with the same teammate again.',
+        items: [
+          'Each round, you win if both players go to the same restaurant.',
+          'You lose the round if you end up at different restaurants.',
+          'Some restaurants are open when the round starts. Others may appear later.'
+        ]
+      })
     };
 
     return instructions[experimentType] || {
@@ -1839,6 +2001,69 @@ export class TimelineManager {
     return 'P' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   }
 
+  parseDob(dob) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dob || '').trim());
+    if (!match) return null;
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+    if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+    const date = new Date(year, month - 1, day);
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return null;
+    }
+
+    return { year, month, day, date };
+  }
+
+  calculateAgeFromDob(dob, referenceDate = new Date()) {
+    const parsed = this.parseDob(dob);
+    if (!parsed) return null;
+
+    const ref = new Date(
+      referenceDate.getFullYear(),
+      referenceDate.getMonth(),
+      referenceDate.getDate()
+    );
+    const birth = parsed.date;
+    if (birth > ref) return null;
+
+    let years = ref.getFullYear() - birth.getFullYear();
+    let months = ref.getMonth() - birth.getMonth();
+    let days = ref.getDate() - birth.getDate();
+
+    if (days < 0) {
+      months -= 1;
+      days += new Date(ref.getFullYear(), ref.getMonth(), 0).getDate();
+    }
+
+    if (months < 0) {
+      years -= 1;
+      months += 12;
+    }
+
+    const birthUtc = Date.UTC(parsed.year, parsed.month - 1, parsed.day);
+    const refUtc = Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate());
+    const totalDays = Math.floor((refUtc - birthUtc) / 86400000);
+
+    return {
+      participantDob: `${String(parsed.year).padStart(4, '0')}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day).padStart(2, '0')}`,
+      participantAgeReferenceDate: `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}-${String(ref.getDate()).padStart(2, '0')}`,
+      participantAgeYears: years,
+      participantAgeMonths: months,
+      participantAgeDays: days,
+      participantAgeTotalDays: totalDays
+    };
+  }
+
   getUrlParam(names) {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -1850,6 +2075,20 @@ export class TimelineManager {
       // ignore
     }
     return '';
+  }
+
+  getBooleanUrlParam(names) {
+    const value = this.getUrlParam(names).toLowerCase();
+    return ['1', 'true', 'yes', 'y'].includes(value);
+  }
+
+  shouldSkipDobInput() {
+    return this.getBooleanUrlParam([
+      'skipDob',
+      'skipDOB',
+      'skipDateOfBirth',
+      'skip_dob'
+    ]);
   }
 
   getLookitResponseId() {
