@@ -259,6 +259,8 @@ app.post('/api/tts/speak', async (req, res) => {
 const clientDir = fs.existsSync(path.join(__dirname, '..', 'dist'))
   ? path.join(__dirname, '..', 'dist')
   : path.join(__dirname, '..', 'client');
+const clientBasePath = '/MinimalCoordinationGame-CHS-unmoderated';
+app.use(clientBasePath, express.static(clientDir));
 app.use(express.static(clientDir));
 
 // Fallback to index.html for SPA routes (exclude API/config/socket.io)

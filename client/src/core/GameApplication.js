@@ -332,6 +332,17 @@ export class GameApplication {
       this.saveExperimentData(experimentData);
     });
 
+    this.timelineManager.on('save-data-checkpoint', (payload) => {
+      const checkpoint = payload?.checkpoint || 'checkpoint';
+      console.log(`💾 Timeline requesting background data save checkpoint: ${checkpoint}`, payload);
+      this.saveExperimentData(payload?.data || payload, {
+        checkpoint,
+        checkpointTime: payload?.checkpointTime,
+        notifyTimeline: false,
+        showAlert: false
+      });
+    });
+
     // Handle trial feedback event
     this.timelineManager.on('show-trial-feedback', (data) => {
       console.log('📊 Timeline requesting trial feedback:', data);
@@ -367,9 +378,14 @@ export class GameApplication {
     console.log('📡 Timeline event handlers setup completed');
   }
 
-  async saveExperimentData(data) {
+  async saveExperimentData(data, options = {}) {
     // Save/export experiment data in legacy-compatible shape
     try {
+      const saveCheckpoint = options.checkpoint || data.saveCheckpoint || (data.completed ? 'questionnaire_complete' : 'checkpoint');
+      const saveCheckpointTime = options.checkpointTime || data.saveCheckpointTime || new Date().toISOString();
+      const notifyTimeline = options.notifyTimeline !== false;
+      const showAlert = options.showAlert !== false;
+
       // Pull comprehensive trial data from GameStateManager (legacy: allTrialsData)
       const gsData = this.gameStateManager?.getExperimentData?.() || { allTrialsData: [], successThreshold: {} };
 
@@ -422,6 +438,11 @@ export class GameApplication {
         lookitResponseId,
         lookitChildId,
         timestamp: new Date().toISOString(),
+        saveCheckpoint,
+        saveCheckpointTime,
+        dataSaveCheckpointTimes: data.dataSaveCheckpointTimes || {},
+        gamesCompletedAt: data.gamesCompletedAt || null,
+        questionnaireCompletedAt: data.questionnaireCompletedAt || null,
         experimentOrder: (CONFIG?.game?.experiments?.order) || [],
         allTrialsData: gsData.allTrialsData || [],
         questionnaireData: data.questionnaire || null,
@@ -431,6 +452,8 @@ export class GameApplication {
         participantAgeMonths: data.participantAgeMonths ?? null,
         participantAgeDays: data.participantAgeDays ?? null,
         participantAgeTotalDays: data.participantAgeTotalDays ?? null,
+        parentEmail: data.parentEmail || null,
+        parentEmailUse: data.parentEmailUse || 'payment_and_child_certificate_only',
         successThreshold: gsData.successThreshold || {},
         completionCode: data.completionCode || '',
         version: (CONFIG?.game?.version) || '2.0.0',
@@ -470,6 +493,8 @@ export class GameApplication {
               o.roomId = exportObj.roomId || '';
               // Add participantId per row for easier analysis join
               o.participantId = exportObj.participantId;
+              o.saveCheckpoint = exportObj.saveCheckpoint || '';
+              o.saveCheckpointTime = exportObj.saveCheckpointTime || '';
               // Lookit join keys from exp-lookit-iframe query parameters
               o.lookitResponseId = exportObj.lookitResponseId || '';
               o.lookitChildId = exportObj.lookitChildId || '';
@@ -479,6 +504,8 @@ export class GameApplication {
               o.participantAgeMonths = exportObj.participantAgeMonths ?? '';
               o.participantAgeDays = exportObj.participantAgeDays ?? '';
               o.participantAgeTotalDays = exportObj.participantAgeTotalDays ?? '';
+              o.parentEmail = exportObj.parentEmail || '';
+              o.parentEmailUse = exportObj.parentEmailUse || '';
               // Add current player number (1 or 2) for human-human mode analysis
               o.currentPlayer = (this.playerIndex !== undefined) ? (this.playerIndex + 1) : null;
               // Legacy naming: prefer distanceCondition in exports
@@ -498,6 +525,8 @@ export class GameApplication {
             const preferredOrder = [
               'trialIndex', 'experimentType', 'partnerAgentType',
               'currentPlayer', 'participantId', 'lookitResponseId', 'lookitChildId', 'roomId',
+              'saveCheckpoint', 'saveCheckpointTime',
+              'parentEmail', 'parentEmailUse',
               'participantDob', 'participantAgeReferenceDate',
               'participantAgeYears', 'participantAgeMonths', 'participantAgeDays', 'participantAgeTotalDays',
               'humanPlayerIndex', 'aiPlayerIndex',
@@ -572,6 +601,11 @@ export class GameApplication {
             ['participantId', exportObj.participantId],
             ['lookitResponseId', exportObj.lookitResponseId || ''],
             ['lookitChildId', exportObj.lookitChildId || ''],
+            ['saveCheckpoint', exportObj.saveCheckpoint || ''],
+            ['saveCheckpointTime', exportObj.saveCheckpointTime || ''],
+            ['dataSaveCheckpointTimes', JSON.stringify(exportObj.dataSaveCheckpointTimes || {})],
+            ['parentEmail', exportObj.parentEmail || ''],
+            ['parentEmailUse', exportObj.parentEmailUse || ''],
             ['participantDob', exportObj.participantDob || ''],
             ['participantAgeReferenceDate', exportObj.participantAgeReferenceDate || ''],
             ['participantAgeYears', exportObj.participantAgeYears ?? ''],
@@ -586,6 +620,8 @@ export class GameApplication {
             ['fallbackEvents', JSON.stringify(fallbackEvents)],
             ['waitingDuration', exportObj.waitingDuration || 0],
             ['waitingDetails', JSON.stringify(exportObj.waitingDetails || [])],
+            ['gamesCompletedAt', exportObj.gamesCompletedAt || ''],
+            ['questionnaireCompletedAt', exportObj.questionnaireCompletedAt || ''],
             ['collaborationTrialsTotal', collaborationTrials.length],
             ['collaborationSuccessCount', collaborationSuccessCount],
             ['collaborationSuccessRate', collaborationSuccessRate],
@@ -594,6 +630,27 @@ export class GameApplication {
           ];
           const metaSheet = XLSX.utils.aoa_to_sheet(metaRows);
           XLSX.utils.book_append_sheet(wb, metaSheet, 'Meta');
+
+          const participantInfoRows = [
+            ['Field', 'Value'],
+            ['participantId', exportObj.participantId],
+            ['lookitResponseId', exportObj.lookitResponseId || ''],
+            ['lookitChildId', exportObj.lookitChildId || ''],
+            ['saveCheckpoint', exportObj.saveCheckpoint || ''],
+            ['saveCheckpointTime', exportObj.saveCheckpointTime || ''],
+            ['parentEmail', exportObj.parentEmail || ''],
+            ['parentEmailUse', exportObj.parentEmailUse || ''],
+            ['participantDob', exportObj.participantDob || ''],
+            ['participantAgeReferenceDate', exportObj.participantAgeReferenceDate || ''],
+            ['participantAgeYears', exportObj.participantAgeYears ?? ''],
+            ['participantAgeMonths', exportObj.participantAgeMonths ?? ''],
+            ['participantAgeDays', exportObj.participantAgeDays ?? ''],
+            ['participantAgeTotalDays', exportObj.participantAgeTotalDays ?? ''],
+            ['gamesCompletedAt', exportObj.gamesCompletedAt || ''],
+            ['questionnaireCompletedAt', exportObj.questionnaireCompletedAt || '']
+          ];
+          const participantInfoSheet = XLSX.utils.aoa_to_sheet(participantInfoRows);
+          XLSX.utils.book_append_sheet(wb, participantInfoSheet, 'ParticipantInfo');
 
           // Collaboration Summary sheet
           const collaborationSummaryRows = [
@@ -638,7 +695,8 @@ export class GameApplication {
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
           const safeId = String(exportObj.participantId).replace(/[^a-zA-Z0-9_-]/g, '_');
           const safeRoom = String(exportObj.roomId || 'no-room').replace(/[^a-zA-Z0-9_-]/g, '_');
-          const excelFilename = `experiment_data_${safeId}_room_${safeRoom}_${ts}.xlsx`;
+          const safeCheckpoint = String(exportObj.saveCheckpoint || 'checkpoint').replace(/[^a-zA-Z0-9_-]/g, '_');
+          const excelFilename = `experiment_data_${safeId}_${safeCheckpoint}_room_${safeRoom}_${ts}.xlsx`;
 
           const formData = new FormData();
           formData.append('filename', excelFilename);
@@ -647,13 +705,15 @@ export class GameApplication {
 
           fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: formData })
             .then(() => {
-              console.log('✅ Google Drive save attempted via Apps Script');
+              console.log(`✅ Google Drive save attempted via Apps Script (${saveCheckpoint})`);
               // Provide user feedback like legacy and notify timeline
               try {
-                if (this.timelineManager) {
+                if (notifyTimeline && this.timelineManager) {
                   this.timelineManager.emit('data-save-success');
                 }
-                alert('Data saved successfully!');
+                if (showAlert) {
+                  alert('Data saved successfully!');
+                }
               } catch (e) {
                 // Ignore UI feedback errors
               }

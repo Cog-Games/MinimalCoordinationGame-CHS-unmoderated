@@ -27,10 +27,14 @@ export class TimelineManager {
       participantAgeMonths: null,
       participantAgeDays: null,
       participantAgeTotalDays: null,
+      parentEmail: null,
+      parentEmailUse: 'payment_and_child_certificate_only',
+      dataSaveCheckpointTimes: {},
       totalScore: 0,
       completed: false
     };
     this.eventHandlers = new Map();
+    this.requestedDataSaveCheckpoints = new Set();
 
     // Success threshold tracking for collaboration experiments
     this.successThreshold = {
@@ -287,6 +291,13 @@ export class TimelineManager {
     console.log(`🎬 Running stage ${this.currentStageIndex}: ${stage.type}`);
 
     try {
+      if (stage.type === 'questionnaire') {
+        const gamesCompletedAt = new Date().toISOString();
+        this.experimentData.gamesCompletedAt = this.experimentData.gamesCompletedAt || gamesCompletedAt;
+        this.requestDataSaveCheckpoint('games_complete', {
+          gamesCompletedAt: this.experimentData.gamesCompletedAt
+        });
+      }
       stage.handler();
     } catch (error) {
       console.error(`❌ Error running stage ${stage.type}:`, error);
@@ -301,6 +312,31 @@ export class TimelineManager {
     console.log(`➡️ Advancing from stage ${this.currentStageIndex} to ${this.currentStageIndex + 1}`);
     this.currentStageIndex++;
     this.runCurrentStage();
+  }
+
+  requestDataSaveCheckpoint(checkpoint, extraData = {}) {
+    if (!checkpoint || this.requestedDataSaveCheckpoints.has(checkpoint)) {
+      return;
+    }
+
+    this.requestedDataSaveCheckpoints.add(checkpoint);
+    const checkpointTime = new Date().toISOString();
+    this.experimentData.dataSaveCheckpointTimes = {
+      ...(this.experimentData.dataSaveCheckpointTimes || {}),
+      [checkpoint]: checkpointTime
+    };
+    Object.assign(this.experimentData, extraData);
+
+    console.log(`💾 Requesting background data save checkpoint: ${checkpoint}`);
+    this.emit('save-data-checkpoint', {
+      checkpoint,
+      checkpointTime,
+      data: {
+        ...this.experimentData,
+        saveCheckpoint: checkpoint,
+        saveCheckpointTime: checkpointTime
+      }
+    });
   }
 
   /**
@@ -391,7 +427,7 @@ export class TimelineManager {
         <div style="background: white; padding: 36px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 560px; width: calc(100% - 40px); text-align: center;">
           <h2 style="color: #333; margin: 0 0 12px; font-size: 28px;">Welcome to the Game!</h2>
           <p style="font-size: 16px; color: #444; line-height: 1.5; margin: 0 0 24px;">
-            Please enter your kid's date of birth to start the game.
+            Please enter your kid's date of birth and a parent email to start the game.
           </p>
 
           <form id="dobStartForm" style="display: flex; flex-direction: column; gap: 18px; align-items: stretch;">
@@ -418,6 +454,15 @@ export class TimelineManager {
                 </select>
               </label>
             </div>
+
+            <label style="font-weight: bold; color: #333; text-align: left;">
+              Parent email
+              <input id="parentEmail" type="email" required autocomplete="email" placeholder="parent@example.com" style="box-sizing: border-box; width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #bbb; border-radius: 6px; font-size: 16px;">
+            </label>
+
+            <p style="font-size: 14px; color: #555; line-height: 1.45; margin: -6px 0 0; text-align: left;">
+              Your email will be used only to send your child’s certificate and study payment.
+            </p>
 
             <div id="dobError" role="alert" style="min-height: 22px; color: #dc3545; font-size: 15px; text-align: center;"></div>
 
@@ -449,6 +494,7 @@ export class TimelineManager {
       const year = Number(document.getElementById('dobYear')?.value);
       const month = Number(document.getElementById('dobMonth')?.value);
       const day = Number(document.getElementById('dobDay')?.value);
+      const parentEmail = String(document.getElementById('parentEmail')?.value || '').trim();
       const dob = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const ageInfo = this.calculateAgeFromDob(dob, new Date());
 
@@ -457,7 +503,23 @@ export class TimelineManager {
         return;
       }
 
-      Object.assign(this.experimentData, ageInfo);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail)) {
+        setError('Please enter a valid parent email address.');
+        return;
+      }
+
+      Object.assign(this.experimentData, {
+        ...ageInfo,
+        parentEmail,
+        parentEmailUse: 'payment_and_child_certificate_only'
+      });
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Starting...';
+        startBtn.style.cursor = 'default';
+        startBtn.style.background = '#28a745';
+      }
+      this.requestDataSaveCheckpoint('start_info_collected');
       this.nextStage();
     });
 
@@ -1657,6 +1719,7 @@ export class TimelineManager {
             } else {
               document.removeEventListener('keydown', handleKeys);
               this.experimentData.questionnaire = answers;
+              this.experimentData.questionnaireCompletedAt = new Date().toISOString();
               console.log('📝 Questionnaire completed');
               this.nextStage();
             }
@@ -1705,6 +1768,7 @@ export class TimelineManager {
               currentAudio = null;
             }
             this.experimentData.questionnaire = answers;
+            this.experimentData.questionnaireCompletedAt = new Date().toISOString();
             console.log('📝 Questionnaire completed');
             this.nextStage();
           }
@@ -1896,8 +1960,16 @@ export class TimelineManager {
     this.experimentData.completed = true;
     this.experimentData.completionCode = completionCode;
     this.experimentData.endTime = new Date().toISOString();
+    this.experimentData.dataSaveCheckpointTimes = {
+      ...(this.experimentData.dataSaveCheckpointTimes || {}),
+      questionnaire_complete: this.experimentData.endTime
+    };
 
-    this.emit('save-data', this.experimentData);
+    this.emit('save-data', {
+      ...this.experimentData,
+      saveCheckpoint: 'questionnaire_complete',
+      saveCheckpointTime: this.experimentData.endTime
+    });
 
     // Safety: If save takes too long or fails silently, still direct participants to the platform Next button.
     try {
