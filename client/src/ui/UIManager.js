@@ -13,6 +13,8 @@ export class UIManager {
     this.gameMode = 'human-ai'; // 'human-ai' or 'human-human'
     this.lastGameState = null;
     this.handleResize = null;
+    this.gameFocusTarget = null;
+    this.gameFocusCleanupFns = [];
   }
 
   cleanupCanvas() {
@@ -20,8 +22,65 @@ export class UIManager {
       window.removeEventListener('resize', this.handleResize);
       this.handleResize = null;
     }
+    this.cleanupGameFocusHandlers();
     this.gameCanvas = null;
     this.lastGameState = null;
+  }
+
+  cleanupGameFocusHandlers() {
+    this.gameFocusCleanupFns.forEach((cleanup) => {
+      try { cleanup(); } catch (_) { /* noop */ }
+    });
+    this.gameFocusCleanupFns = [];
+    this.gameFocusTarget = null;
+  }
+
+  focusGameInput() {
+    const target = this.gameFocusTarget || this.gameCanvas;
+    if (!target || typeof target.focus !== 'function') return;
+
+    try { window.focus?.(); } catch (_) { /* noop */ }
+    try {
+      target.focus({ preventScroll: true });
+    } catch (_) {
+      try { target.focus(); } catch (_) { /* noop */ }
+    }
+  }
+
+  setupGameFocusTarget(container, canvas) {
+    this.cleanupGameFocusHandlers();
+
+    if (!container && !canvas) return;
+
+    const focusTarget = canvas || container;
+    this.gameFocusTarget = focusTarget;
+
+    [container, canvas].filter(Boolean).forEach((element) => {
+      element.setAttribute('tabindex', '0');
+      element.style.outline = 'none';
+      element.style.webkitTapHighlightColor = 'transparent';
+    });
+
+    const refocusGame = () => this.focusGameInput();
+    const focusSurfaces = [container, canvas].filter(Boolean);
+    const focusEvents = ['pointerdown', 'mousedown', 'touchstart'];
+
+    focusSurfaces.forEach((surface) => {
+      focusEvents.forEach((eventName) => {
+        surface.addEventListener(eventName, refocusGame, { passive: true });
+        this.gameFocusCleanupFns.push(() => {
+          surface.removeEventListener(eventName, refocusGame);
+        });
+      });
+    });
+
+    const deferFocus = () => this.focusGameInput();
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(deferFocus);
+    } else {
+      setTimeout(deferFocus, 0);
+    }
+    setTimeout(deferFocus, 50);
   }
 
   // Event system
@@ -177,6 +236,7 @@ export class UIManager {
 
       this.gameCanvas = this.renderer.createCanvas();
       container.appendChild(this.gameCanvas);
+      this.setupGameFocusTarget(container, this.gameCanvas);
 
       // Apply initial responsive sizing and re-render if we have state
       const doResize = () => {
@@ -213,7 +273,7 @@ export class UIManager {
     };
 
     document.addEventListener('keydown', this.keyboardHandler);
-    document.body.focus();
+    this.focusGameInput();
   }
 
   // Lobby updates
@@ -546,6 +606,7 @@ export class UIManager {
 
     // Store reference to canvas
     this.gameCanvas = canvas;
+    this.setupGameFocusTarget(container, canvas);
 
     // Apply initial responsive sizing and re-render if we have state
     const doResize = () => {
