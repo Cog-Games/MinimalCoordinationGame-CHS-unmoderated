@@ -366,11 +366,13 @@ export class UIManager {
     const experimentType = result.experimentType || '2P2G'; // Default to collaboration type
 
     // Determine message type based on experiment type
-    const messageType = experimentType.startsWith('1P') ? 'single' : 'collaboration';
+    const messageType = GameConfigUtils.isStagHuntExperiment(experimentType)
+      ? 'stag-hunt'
+      : (experimentType.startsWith('1P') ? 'single' : 'collaboration');
 
     const message = success ?
-      (messageType === 'single' ? '🎉 Goal reached!' : '🎉 Collaboration succeeded!') :
-      (messageType === 'single' ? '❌ Time up!' : '❌ Collaboration failed!');
+      (messageType === 'single' ? '🎉 Goal reached!' : (messageType === 'stag-hunt' ? '🎉 Goal reached!' : '🎉 Collaboration succeeded!')) :
+      (messageType === 'single' ? '❌ Time up!' : (messageType === 'stag-hunt' ? '❌ Time up!' : '❌ Collaboration failed!'));
 
     this.showGameStatus(message, success ? 'success' : 'warning');
 
@@ -479,8 +481,15 @@ export class UIManager {
     }
 
     // Validate messageType
-    if (messageType !== 'single' && messageType !== 'collaboration') {
-      console.warn('Invalid messageType. Must be "single" or "collaboration"');
+    const validMessageTypes = [
+      'single',
+      'collaboration',
+      'stag-hunt-both-stag',
+      'stag-hunt-human-rabbit',
+      'stag-hunt-human-nothing'
+    ];
+    if (!validMessageTypes.includes(messageType)) {
+      console.warn('Invalid messageType. Falling back to collaboration feedback.');
       messageType = 'collaboration';
     }
 
@@ -534,6 +543,12 @@ export class UIManager {
       message = success ? 'Goal reached!' : 'Time up!';
     } else if (messageType === 'collaboration') {
       message = success ? 'Collaboration succeeded!' : 'Collaboration failed!';
+    } else if (messageType === 'stag-hunt-both-stag') {
+      message = 'You both caught the stag!';
+    } else if (messageType === 'stag-hunt-human-rabbit') {
+      message = 'You caught a rabbit.';
+    } else if (messageType === 'stag-hunt-human-nothing') {
+      message = 'No catch this round.';
     }
 
     // Create overlay div positioned absolutely over the canvas

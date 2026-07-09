@@ -30,7 +30,7 @@ export class GameRenderer {
   applyResponsiveSizing() {
     if (!this.canvas) return;
 
-    const gridSize = CONFIG.game.matrixSize;
+    const gridSize = this.getGridSize();
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
 
     // Determine maximum CSS size available (square) based on viewport and parent container
@@ -90,6 +90,14 @@ export class GameRenderer {
     }
   }
 
+  getGridSize(gridMatrix = null) {
+    const matrix = gridMatrix || this.gameState?.gridMatrix;
+    if (Array.isArray(matrix) && matrix.length > 0) {
+      return matrix.length;
+    }
+    return CONFIG.game.matrixSize;
+  }
+
   render(canvas, gameState) {
     if (!canvas || !gameState || !gameState.gridMatrix) {
       return;
@@ -115,7 +123,7 @@ export class GameRenderer {
   }
 
   drawGrid() {
-    const gridSize = CONFIG.game.matrixSize;
+    const gridSize = this.getGridSize();
 
     // Draw grid cells with padding (legacy style)
     for (let row = 0; row < gridSize; row++) {
@@ -132,7 +140,7 @@ export class GameRenderer {
   }
 
   drawGameObjects(gridMatrix) {
-    const gridSize = CONFIG.game.matrixSize;
+    const gridSize = this.getGridSize(gridMatrix);
 
     // First pass: draw obstacles (background elements)
     for (let row = 0; row < gridSize; row++) {
@@ -156,28 +164,37 @@ export class GameRenderer {
 
   drawGoals() {
     // Draw goals from gameState.currentGoals if available
-    if (this.gameState && this.gameState.currentGoals && Array.isArray(this.gameState.currentGoals)) {
-      for (const goal of this.gameState.currentGoals) {
+    if (this.gameState && Array.isArray(this.gameState.currentGoals)) {
+      const types = Array.isArray(this.gameState.currentGoalTypes)
+        ? this.gameState.currentGoalTypes
+        : [];
+      const claimed = this.gameState.claimedSmallGoals;
+      const isClaimed = (idx) => claimed && typeof claimed.has === 'function' && claimed.has(idx);
+
+      this.gameState.currentGoals.forEach((goal, index) => {
         if (goal && Array.isArray(goal) && goal.length >= 2) {
           const [row, col] = goal;
-          this.drawGoalWithPlayerCheck(row, col);
+          const type = types[index] || 'small';
+          if (type !== 'big' && isClaimed(index)) return;
+          this.drawGoalWithPlayerCheck(row, col, type);
         }
-      }
+      });
     } else {
       // Fallback to grid matrix if currentGoals not available
-      const gridSize = CONFIG.game.matrixSize;
+      const gridSize = this.getGridSize(this.gameState?.gridMatrix);
       for (let row = 0; row < gridSize; row++) {
         for (let col = 0; col < gridSize; col++) {
           const cellValue = this.gameState.gridMatrix[row][col];
-          if (cellValue === GAME_OBJECTS.goal) {
-            this.drawGoalWithPlayerCheck(row, col);
+          if (cellValue === GAME_OBJECTS.goal || cellValue === GAME_OBJECTS.goal_small || cellValue === GAME_OBJECTS.goal_big) {
+            const type = cellValue === GAME_OBJECTS.goal_big ? 'big' : 'small';
+            this.drawGoalWithPlayerCheck(row, col, type);
           }
         }
       }
     }
   }
 
-  drawGoalWithPlayerCheck(row, col) {
+  drawGoalWithPlayerCheck(row, col, type = 'small') {
     // Check if any player is at this goal position
     const hasPlayer = this.isPlayerAtPosition(row, col);
 
@@ -193,7 +210,13 @@ export class GameRenderer {
       this.ctx.globalAlpha = 0.7; // Same as legacy version
     }
 
-    this.ctx.fillRect(x, y, this.cellSize, this.cellSize);
+    if (type === 'big') {
+      const margin = this.cellSize * 0.08;
+      this.ctx.fillRect(x + margin, y + margin, this.cellSize - 2 * margin, this.cellSize - 2 * margin);
+    } else {
+      const margin = this.cellSize * 0.3;
+      this.ctx.fillRect(x + margin, y + margin, this.cellSize - 2 * margin, this.cellSize - 2 * margin);
+    }
     this.ctx.restore();
   }
 
@@ -218,7 +241,7 @@ export class GameRenderer {
   }
 
   getPlayerPositions(gridMatrix) {
-    const gridSize = CONFIG.game.matrixSize;
+    const gridSize = this.getGridSize(gridMatrix);
     const positions = [];
 
     // First, collect all player positions from the grid matrix
@@ -295,9 +318,14 @@ export class GameRenderer {
         break;
 
       case GAME_OBJECTS.goal:
-        // Draw goal (blue square) - no border, full cell size
+      case GAME_OBJECTS.goal_small:
         this.ctx.fillStyle = CONFIG.visual.colors.goal;
-        this.ctx.fillRect(x, y, this.cellSize, this.cellSize);
+        this.ctx.fillRect(x + this.cellSize * 0.3, y + this.cellSize * 0.3, this.cellSize * 0.4, this.cellSize * 0.4);
+        break;
+
+      case GAME_OBJECTS.goal_big:
+        this.ctx.fillStyle = CONFIG.visual.colors.goal;
+        this.ctx.fillRect(x + this.cellSize * 0.08, y + this.cellSize * 0.08, this.cellSize * 0.84, this.cellSize * 0.84);
         break;
 
       case GAME_OBJECTS.obstacle:
@@ -486,8 +514,9 @@ export class GameRenderer {
     const col = Math.floor(pixelX / this.cellSize);
     const row = Math.floor(pixelY / this.cellSize);
 
-    if (row >= 0 && row < CONFIG.game.matrixSize &&
-        col >= 0 && col < CONFIG.game.matrixSize) {
+    const gridSize = this.getGridSize();
+    if (row >= 0 && row < gridSize &&
+        col >= 0 && col < gridSize) {
       return { row, col };
     }
 

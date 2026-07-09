@@ -1,9 +1,12 @@
 import { CONFIG, GAME_OBJECTS, GameConfigUtils } from '../config/gameConfig.js';
 import { RLAgent } from '../ai/RLAgent.js';
 import { GptAgentClient } from '../ai/GptAgentClient.js';
+import { WeIntentAgent } from '../ai/WeIntentAgent.js';
+import { VlmAgentClient } from '../ai/VlmAgentClient.js';
 import { GameHelpers } from '../utils/GameHelpers.js';
 import { NewGoalGenerator } from '../utils/NewGoalGenerator.js';
 import { mapLoader } from '../utils/MapLoader.js';
+import { MapParser } from '../utils/MapParser.js';
 
 export class ExperimentManager {
   constructor(gameStateManager, uiManager, timelineManager = null) {
@@ -12,6 +15,8 @@ export class ExperimentManager {
     this.timelineManager = timelineManager;
     this.rlAgent = new RLAgent();
     this.gptClient = new GptAgentClient();
+    this.weIntentAgent = new WeIntentAgent();
+    this.vlmClient = new VlmAgentClient();
 
     this.currentExperimentSequence = [];
     this.currentExperimentIndex = 0;
@@ -21,6 +26,7 @@ export class ExperimentManager {
     this.aiMoveInterval = null;
     this.newGoalIntervalId = null;
     this.aiPlayerNumber = 2; // 1 or 2; default assume AI is player 2
+    this.sampledMapsByExperiment = {};
 
     // Initialize map data with MapLoader
     this.mapLoader = mapLoader;
@@ -68,6 +74,8 @@ export class ExperimentManager {
             td.partnerAgentType = 'joint-rl';
           } else if (fallbackType === 'rl_individual') {
             td.partnerAgentType = 'individual-rl';
+          } else if (fallbackType === 'rl_individual_python') {
+            td.partnerAgentType = 'individual-rl-python';
           } else {
             td.partnerAgentType = String(fallbackType);
           }
@@ -77,15 +85,13 @@ export class ExperimentManager {
         }
       } catch (_) { /* ignore */ }
 
-      // Set up AI movement listeners for the fallback AI
-      if (!CONFIG?.game?.agent?.synchronizedMoves) {
-        try { if (!CONFIG?.debug?.disableConsoleLogs) console.log('[DEBUG] Setting up AI movement (non-synchronized mode)'); } catch (_) {}
+      // Set up AI movement based on the game's move mode
+      const moveMode = CONFIG?.game?.moveMode || 'simultaneous';
+      if (moveMode === 'free') {
+        try { if (!CONFIG?.debug?.disableConsoleLogs) console.log('[DEBUG] Setting up AI movement (free/independent mode)'); } catch (_) {}
         this.setupAIMovement();
       } else {
-        // In synchronized mode, no extra setup needed; AI moves are generated on human input
-        console.log('🤖 AI fallback activated (synchronized moves)');
-        try { if (!CONFIG?.debug?.disableConsoleLogs) console.log('[DEBUG] Setting up independent AI movement after human goal'); } catch (_) {}
-        // But we still need to set up independent AI movement for when human reaches goal
+        console.log(`🤖 AI fallback activated (${moveMode} moves)`);
         this.setupIndependentAIAfterHumanGoal();
       }
 
@@ -120,6 +126,7 @@ export class ExperimentManager {
     this.currentExperimentSequence = experiments || CONFIG.game.experiments.order;
     this.currentExperimentIndex = 0;
     this.isRunning = true;
+    this.sampledMapsByExperiment = {};
 
     console.log('Starting experiment sequence:', this.currentExperimentSequence);
 
@@ -159,7 +166,7 @@ export class ExperimentManager {
       return;
     }
 
-    const maxTrials = GameConfigUtils.getNumTrials(experimentType) || 12;
+    const maxTrials = CONFIG.game.experiments.numTrials[experimentType] || 12;
 
     // Check if experiment should end early due to success threshold
     if (this.shouldEndExperimentEarly(experimentType)) {
@@ -191,10 +198,19 @@ export class ExperimentManager {
     try {
       const p1Type = CONFIG?.game?.players?.player1?.type;
       const p2Type = CONFIG?.game?.players?.player2?.type;
-      if (String(experimentType || '').includes('2P') && (p1Type === 'gpt' || p2Type === 'gpt')) {
+      const needsRemoteAI = (t) => (
+        t === 'gpt' || t === 'gpt-ToM' || t === 'vlm' || t === 'vlm-ToM'
+      );
+      if (GameConfigUtils.isTwoPlayerExperiment(experimentType)
+        && (needsRemoteAI(p1Type) || needsRemoteAI(p2Type))) {
         await this.logCurrentAIModel();
       }
     } catch (_) { /* noop */ }
+
+    // Legacy welcome screen has no canvas; create game layout before rendering state
+    if (this.uiManager && this.uiManager.currentScreen !== 'game') {
+      this.uiManager.showGameScreen();
+    }
 
     // Initialize trial
     this.gameStateManager.initializeTrial(this.currentTrialIndex, experimentType, design);
@@ -202,6 +218,11 @@ export class ExperimentManager {
     // Update UI
     this.uiManager.updateGameInfo(this.currentExperimentIndex, this.currentTrialIndex, experimentType);
     this.uiManager.updateGameDisplay(this.gameStateManager.getCurrentState());
+
+    // Reset WeIntentAgent beliefs at each trial start
+    if (this.weIntentAgent) {
+      this.weIntentAgent.reset();
+    }
 
     // Start trial based on experiment type
     this.startTrialExecution(experimentType);
@@ -220,6 +241,8 @@ export class ExperimentManager {
         this.runTrial1P2G();
         break;
       case '2P2G':
+      case 'StagHunt':
+      case 'StagHuntTwoStags':
         this.runTrial2P2G();
         break;
       case '2P3G':
@@ -252,11 +275,12 @@ export class ExperimentManager {
       this.aiPlayerNumber = (p2Type !== 'human') ? 2 : 1;
       // Log current AI model/config for visibility
       this.logCurrentAIModel();
-      if (CONFIG.game.agent.synchronizedMoves) {
-        console.log('2P2G: Synchronized human-AI moves enabled');
-        this.setupIndependentAIAfterHumanGoal();
-      } else {
+      const moveMode = CONFIG?.game?.moveMode || 'simultaneous';
+      if (moveMode === 'free') {
         this.setupAIMovement();
+      } else {
+        console.log(`2P2G: ${moveMode} human-AI moves enabled`);
+        this.setupIndependentAIAfterHumanGoal();
       }
     } else {
       // Human-human mode - no AI movement setup needed
@@ -272,11 +296,12 @@ export class ExperimentManager {
       this.aiPlayerNumber = (p2Type !== 'human') ? 2 : 1;
       // Log current AI model/config for visibility
       this.logCurrentAIModel();
-      if (CONFIG.game.agent.synchronizedMoves) {
-        console.log('2P3G: Synchronized human-AI moves enabled');
-        this.setupIndependentAIAfterHumanGoal();
-      } else {
+      const moveMode = CONFIG?.game?.moveMode || 'simultaneous';
+      if (moveMode === 'free') {
         this.setupAIMovement();
+      } else {
+        console.log(`2P3G: ${moveMode} human-AI moves enabled`);
+        this.setupIndependentAIAfterHumanGoal();
       }
     } else {
       // Human-human mode - no AI movement setup needed
@@ -287,70 +312,60 @@ export class ExperimentManager {
 
   async logCurrentAIModel() {
     try {
+      const p1Type = CONFIG?.game?.players?.player1?.type;
       const p2Type = CONFIG?.game?.players?.player2?.type;
-      if (p2Type === 'gpt') {
-        const base = (CONFIG.server.url || '').replace(/\/$/, '');
+      const base = (CONFIG.server.url || '').replace(/\/$/, '');
+      const gptPartner = (t) => t === 'gpt' || t === 'gpt-ToM';
+      const vlmPartner = (t) => t === 'vlm' || t === 'vlm-ToM';
+
+      if (gptPartner(p1Type) || gptPartner(p2Type)) {
         const resp = await fetch(`${base}/api/ai/gpt/config`);
         if (resp.ok) {
           const info = await resp.json();
           const model = info?.model || '(unknown)';
-          // Persist model for data recording
+          if (info?.hasApiKey === false) {
+            console.warn('GPT: server reports OPENAI_API_KEY is missing. GPT requests will fail; check the game server .env.');
+          }
           try {
             if (model && model !== '(unknown)') {
-              // Do not overwrite an explicit ToM label set by user/config
-              const current = CONFIG?.game?.agent?.gpt?.model;
-              if (!current || !/^gpt-?tom$/i.test(String(current))) {
-                CONFIG.game.agent.gpt.model = model;
-              }
-              // Update current trial's partnerAgentType if available
+              if (!CONFIG.game.agent.gpt) CONFIG.game.agent.gpt = {};
+              CONFIG.game.agent.gpt.model = String(model).trim();
               const td = this.gameStateManager?.trialData;
               const st = this.gameStateManager?.currentState;
-              if (td && st && String(st.experimentType || '').includes('2P')) {
-                td.partnerAgentType = model;
-                // If a fallback occurred earlier and the fallback AI type was generic 'gpt',
-                // upgrade it to the exact model string for accurate export
-                if (td.partnerFallbackOccurred) {
-                  if (!td.partnerFallbackAIType || /^gpt$/i.test(String(td.partnerFallbackAIType))) {
-                    td.partnerFallbackAIType = model;
-                  }
-                  // Also update experiment-level fallbackEvents for this trial if present
-                  try {
-                    const exp = this.gameStateManager?.experimentData;
-                    const curIdx = Number.isInteger(st.trialIndex) ? st.trialIndex : null;
-                    if (exp && Array.isArray(exp.fallbackEvents)) {
-                      exp.fallbackEvents.forEach(evt => {
-                        const matchIdx = (curIdx !== null) ? (evt.trialIndex === curIdx) : true;
-                        if (matchIdx && (!evt.aiType || /^gpt$/i.test(String(evt.aiType)))) {
-                          evt.aiType = model;
-                        }
-                      });
-                    }
-                  } catch (_) { /* noop */ }
-                }
+              if (td && st && GameConfigUtils.isTwoPlayerExperiment(st.experimentType)) {
+                td.partnerAgentType = String(model).trim();
               }
-              // Also sweep existing saved trials to upgrade any generic 'gpt' fallback entries
-              try {
-                const exp = this.gameStateManager?.experimentData;
-                if (exp && Array.isArray(exp.allTrialsData)) {
-                  exp.allTrialsData.forEach(tr => {
-                    if (tr && tr.partnerFallbackOccurred && (!tr.partnerFallbackAIType || /^gpt$/i.test(String(tr.partnerFallbackAIType)))) {
-                      tr.partnerFallbackAIType = model;
-                    }
-                    if (tr && String(tr.partnerAgentType || '').toLowerCase() === 'gpt') {
-                      tr.partnerAgentType = model;
-                    }
-                  });
-                }
-                if (exp && Array.isArray(exp.fallbackEvents)) {
-                  exp.fallbackEvents.forEach(evt => {
-                    if (evt && (!evt.aiType || /^gpt$/i.test(String(evt.aiType)))) {
-                      evt.aiType = model;
-                    }
-                  });
-                }
-              } catch (_) { /* noop */ }
             }
-          } catch (_) { /* ignore */ }
+          } catch (_) { /* noop */ }
+        }
+      } else if (vlmPartner(p1Type) || vlmPartner(p2Type)) {
+        const resp = await fetch(`${base}/api/ai/vlm/config`);
+        if (resp.ok) {
+          const info = await resp.json();
+          const model = info?.model || '(unknown)';
+          const provider = info?.provider || 'openai';
+          if (info?.hasApiKey === false) {
+            const keyHint = provider === 'google'
+              ? 'Set GOOGLE_API_KEY (and VLM_PROVIDER=google if needed) in the game server .env.'
+              : 'Set OPENAI_API_KEY in the game server .env, or use VLM_PROVIDER=google with GOOGLE_API_KEY.';
+            console.warn(`VLM: server has no API key for provider "${provider}". ${keyHint} Requests will fail and the partner will fall back to RL.`);
+          } else {
+            try { if (!CONFIG?.debug?.disableConsoleLogs) console.log(`VLM: provider=${provider}, model=${model}`); } catch (_) { /* noop */ }
+          }
+          try {
+            if (model && model !== '(unknown)') {
+              if (!CONFIG.game.agent.vlm) CONFIG.game.agent.vlm = {};
+              CONFIG.game.agent.vlm.model = String(model).trim();
+              CONFIG.game.agent.vlm.provider = String(provider).trim();
+              const td = this.gameStateManager?.trialData;
+              const st = this.gameStateManager?.currentState;
+              if (td && st && GameConfigUtils.isTwoPlayerExperiment(st.experimentType)) {
+                td.partnerAgentType = String(model).trim();
+              }
+            }
+          } catch (_) { /* noop */ }
+        } else {
+          console.warn(`VLM: could not reach ${base}/api/ai/vlm/config (HTTP ${resp.status}). Is the game server running and is VITE_SERVER_URL correct?`);
         }
       } else if (p2Type === 'rl_joint' || p2Type === 'rl_individual' || p2Type === 'ai') {
         const mode = CONFIG?.game?.agent?.type || (p2Type === 'rl_joint' ? 'joint' : 'individual');
@@ -382,37 +397,20 @@ export class ExperimentManager {
     this.gameLoopInterval = checkPlayerGoal;
   }
 
-  // Handle synchronized move: apply human + AI/GPT moves together, then redraw once
-  async handleSynchronizedMove(humanDirection) {
-    // Active when either player is AI/GPT
-    const p1Type = CONFIG.game.players.player1.type;
-    const p2Type = CONFIG.game.players.player2.type;
-    if (p1Type === 'human' && p2Type === 'human') return;
-
-    const gameState = this.gameStateManager.getCurrentState();
-    if (!gameState.player1 || !gameState.player2) return;
-
-    // Determine human/AI mapping
-    const humanPlayerNumber = (this.aiPlayerNumber === 1) ? 2 : 1;
-
-    // Generate AI/GPT direction
+  async generateAIDirection(gameState) {
     let aiDirection = null;
-    const isGptAllowed = (gameState.experimentType === '2P2G' || gameState.experimentType === '2P3G');
+    const isGptAllowed = GameConfigUtils.isTwoPlayerExperiment(gameState.experimentType);
     let gptError = null;
 
-    // Determine which side is AI and its configured type
     const aiType = (this.aiPlayerNumber === 1)
       ? CONFIG.game.players.player1.type
       : CONFIG.game.players.player2.type;
 
-    if (aiType === 'gpt' && isGptAllowed) {
+    if ((aiType === 'gpt' || aiType === 'gpt-ToM') && isGptAllowed) {
       try {
         aiDirection = await this.gptClient.getNextAction(
-          {
-            ...gameState,
-            trialData: this.gameStateManager.getCurrentTrialData()
-          },
-          { aiPlayerNumber: this.aiPlayerNumber }
+          { ...gameState, trialData: this.gameStateManager.getCurrentTrialData() },
+          { aiPlayerNumber: this.aiPlayerNumber, model: (aiType === 'gpt-ToM' ? 'gpt-ToM' : undefined) }
         );
         if (aiDirection && typeof aiDirection === 'object') {
           if (Object.prototype.hasOwnProperty.call(aiDirection, 'inferredGoal')) {
@@ -422,32 +420,89 @@ export class ExperimentManager {
         }
       } catch (e) {
         gptError = e;
-        console.warn('GPT agent request failed during synchronized move; falling back to RL:', e?.message || e);
+        console.warn('GPT agent request failed; falling back to RL:', e?.message || e);
+      }
+    } else if ((aiType === 'vlm' || aiType === 'vlm-ToM') && isGptAllowed) {
+      try {
+        aiDirection = await this.vlmClient.getNextAction(
+          { ...gameState, trialData: this.gameStateManager.getCurrentTrialData() },
+          { aiPlayerNumber: this.aiPlayerNumber, model: (aiType === 'vlm-ToM' ? 'vlm-ToM' : undefined) }
+        );
+        if (aiDirection && typeof aiDirection === 'object') {
+          if (Object.prototype.hasOwnProperty.call(aiDirection, 'inferredGoal')) {
+            this.gameStateManager.recordAIInferredOtherGoal(aiDirection.inferredGoal ?? null);
+          }
+          aiDirection = aiDirection?.action || null;
+        }
+      } catch (e) {
+        gptError = e;
+        console.warn('VLM agent request failed; falling back to RL:', e?.message || e);
+      }
+    } else if (aiType === 'we_intent_js') {
+      try {
+        aiDirection = this.weIntentAgent.getNextAction(
+          { ...gameState, trialData: this.gameStateManager.getCurrentTrialData() },
+          { aiPlayerNumber: this.aiPlayerNumber }
+        );
+      } catch (e) {
+        console.warn('WeIntentAgent failed, falling back to RL:', e?.message || e);
       }
     }
+
     if (!aiDirection) {
-      if (!this.rlAgent) return; // Safety
+      if (!this.rlAgent) return { aiDirection: null, gptError };
       const aiAction = this.rlAgent.getAIAction(
         gameState.gridMatrix,
         (this.aiPlayerNumber === 1) ? gameState.player1 : gameState.player2,
         gameState.currentGoals,
-        (this.aiPlayerNumber === 1) ? gameState.player2 : gameState.player1
+        (this.aiPlayerNumber === 1) ? gameState.player2 : gameState.player1,
+        this.buildRLContext(gameState)
       );
       aiDirection = this.actionToDirection(aiAction);
-
-      // If GPT error occurred, record the event with fallback details
-      if (gptError) {
-        this.gameStateManager.recordGptErrorEvent({
-          phase: 'synchronized',
-          error: gptError?.message || String(gptError),
-          humanDirection,
-          fallback: 'rl',
-          fallbackDirection: aiDirection
-        });
-      }
     }
 
-    // Apply both moves before a single redraw, mapped to correct players
+    return { aiDirection, gptError };
+  }
+
+  // Build an extra-context object for the joint RL planner so rewards and
+  // goal types reflect the current map's utility structure.
+  buildRLContext(gameState) {
+    const design = this.gameStateManager?.getCurrentMapDesign?.() || null;
+    const goalTypes = Array.isArray(gameState?.currentGoalTypes)
+      ? gameState.currentGoalTypes
+      : null;
+    const utilitySummary = design?.utility_summary || null;
+    return {
+      goalTypes,
+      utilitySummary,
+      experimentType: gameState?.experimentType || null
+    };
+  }
+
+  // Handle synchronized move: apply human + AI/GPT moves together, then redraw once
+  async handleSynchronizedMove(humanDirection) {
+    const p1Type = CONFIG.game.players.player1.type;
+    const p2Type = CONFIG.game.players.player2.type;
+    if (p1Type === 'human' && p2Type === 'human') return;
+
+    const gameState = this.gameStateManager.getCurrentState();
+    if (!gameState.player1 || !gameState.player2) return;
+
+    const humanPlayerNumber = (this.aiPlayerNumber === 1) ? 2 : 1;
+    const { aiDirection, gptError } = await this.generateAIDirection(gameState);
+
+    if (!aiDirection && !this.rlAgent) return;
+
+    if (gptError && aiDirection) {
+      this.gameStateManager.recordGptErrorEvent({
+        phase: 'synchronized',
+        error: gptError?.message || String(gptError),
+        humanDirection,
+        fallback: 'rl',
+        fallbackDirection: aiDirection
+      });
+    }
+
     let syncResult;
     if (humanPlayerNumber === 1) {
       syncResult = this.gameStateManager.processSynchronizedMoves(humanDirection, aiDirection);
@@ -455,10 +510,8 @@ export class ExperimentManager {
       syncResult = this.gameStateManager.processSynchronizedMovesMapped(2, humanDirection, aiDirection);
     }
 
-    // Redraw once with both positions updated
     this.uiManager.updateGameDisplay(this.gameStateManager.getCurrentState());
 
-    // If human reached a goal, ensure independent AI movement starts immediately
     try {
       const stateAfter = this.gameStateManager.getCurrentState();
       const humanPos = (humanPlayerNumber === 1) ? stateAfter.player1 : stateAfter.player2;
@@ -472,6 +525,67 @@ export class ExperimentManager {
 
     if (syncResult?.trialComplete) {
       this.handleTrialComplete(syncResult);
+    }
+  }
+
+  // Handle turn-taking move: apply human move, redraw, then AI move after delay, redraw
+  async handleTurnTakingMove(humanDirection) {
+    const p1Type = CONFIG.game.players.player1.type;
+    const p2Type = CONFIG.game.players.player2.type;
+    if (p1Type === 'human' && p2Type === 'human') return;
+
+    const gameState = this.gameStateManager.getCurrentState();
+    if (!gameState.player1 || !gameState.player2) return;
+
+    const humanPlayerNumber = (this.aiPlayerNumber === 1) ? 2 : 1;
+    const humanPlayerIndex = humanPlayerNumber - 1;
+
+    // Step 1: Apply only the human move
+    const humanResult = this.gameStateManager.processPlayerMove(humanPlayerNumber, humanDirection, humanPlayerIndex);
+    this.uiManager.updateGameDisplay(this.gameStateManager.getCurrentState());
+
+    if (humanResult?.trialComplete) {
+      this.handleTrialComplete(humanResult);
+      return;
+    }
+
+    // If human reached a goal, start independent AI (timer-based) instead
+    const stateAfterHuman = this.gameStateManager.getCurrentState();
+    const humanPos = (humanPlayerNumber === 1) ? stateAfterHuman.player1 : stateAfterHuman.player2;
+    const humanAtGoal = GameHelpers.isGoalReached(humanPos, stateAfterHuman.currentGoals);
+    if (humanAtGoal && !this.aiMoveInterval) {
+      this.startIndependentAIMovement();
+      return;
+    }
+
+    // Step 2: Brief delay so the human move is visually distinct
+    const aiDelay = CONFIG.game.agent.delay || 500;
+    await new Promise(resolve => setTimeout(resolve, aiDelay));
+
+    // Step 3: Generate and apply AI move on the updated state
+    const freshState = this.gameStateManager.getCurrentState();
+    const aiPos = (this.aiPlayerNumber === 1) ? freshState.player1 : freshState.player2;
+    if (GameHelpers.isGoalReached(aiPos, freshState.currentGoals)) return;
+
+    const { aiDirection, gptError } = await this.generateAIDirection(freshState);
+    if (!aiDirection) return;
+
+    if (gptError) {
+      this.gameStateManager.recordGptErrorEvent({
+        phase: 'turn-taking',
+        error: gptError?.message || String(gptError),
+        humanDirection,
+        fallback: 'rl',
+        fallbackDirection: aiDirection
+      });
+    }
+
+    const aiPlayerIndex = this.aiPlayerNumber - 1;
+    const aiResult = this.gameStateManager.processPlayerMove(this.aiPlayerNumber, aiDirection, aiPlayerIndex);
+    this.uiManager.updateGameDisplay(this.gameStateManager.getCurrentState());
+
+    if (aiResult?.trialComplete) {
+      this.handleTrialComplete(aiResult);
     }
   }
 
@@ -531,18 +645,18 @@ export class ExperimentManager {
     const aiType = (this.aiPlayerNumber === 1)
       ? CONFIG.game.players.player1.type
       : CONFIG.game.players.player2.type;
-    const isGptAllowed = (gameState.experimentType === '2P2G' || gameState.experimentType === '2P3G');
+    const isGptAllowed = GameConfigUtils.isTwoPlayerExperiment(gameState.experimentType);
     let gptError = null;
 
 
-    if (aiType === 'gpt' && isGptAllowed) {
+    if ((aiType === 'gpt' || aiType === 'gpt-ToM') && isGptAllowed) {
       try {
         direction = await this.gptClient.getNextAction(
           {
             ...gameState,
             trialData: this.gameStateManager.getCurrentTrialData()
           },
-          { aiPlayerNumber: this.aiPlayerNumber }
+          { aiPlayerNumber: this.aiPlayerNumber, model: (aiType === 'gpt-ToM' ? 'gpt-ToM' : undefined) }
         );
         // If ToM variant, store inferred goal and use only the action for movement
         if (direction && typeof direction === 'object') {
@@ -555,6 +669,38 @@ export class ExperimentManager {
         gptError = err;
         console.warn('GPT agent failed, falling back to RL. Reason:', err?.message || err);
       }
+    } else if ((aiType === 'vlm' || aiType === 'vlm-ToM') && isGptAllowed) {
+      try {
+        direction = await this.vlmClient.getNextAction(
+          {
+            ...gameState,
+            trialData: this.gameStateManager.getCurrentTrialData()
+          },
+          { aiPlayerNumber: this.aiPlayerNumber, model: (aiType === 'vlm-ToM' ? 'vlm-ToM' : undefined) }
+        );
+        if (direction && typeof direction === 'object') {
+          if (Object.prototype.hasOwnProperty.call(direction, 'inferredGoal')) {
+            this.gameStateManager.recordAIInferredOtherGoal(direction.inferredGoal ?? null);
+          }
+          direction = direction?.action || null;
+        }
+      } catch (err) {
+        gptError = err;
+        console.warn('VLM agent failed, falling back to RL. Reason:', err?.message || err);
+      }
+    }
+
+    if (!direction) {
+      if (aiType === 'we_intent_js') {
+        try {
+          direction = this.weIntentAgent.getNextAction(
+            { ...gameState, trialData: this.gameStateManager.getCurrentTrialData() },
+            { aiPlayerNumber: this.aiPlayerNumber }
+          );
+        } catch (e) {
+          console.warn('WeIntentAgent failed, falling back to RL:', e?.message || e);
+        }
+      }
     }
 
     if (!direction) {
@@ -563,9 +709,10 @@ export class ExperimentManager {
         gameState.gridMatrix,
         (this.aiPlayerNumber === 1) ? gameState.player1 : gameState.player2,
         gameState.currentGoals,
-        (this.aiPlayerNumber === 1) ? gameState.player2 : gameState.player1
+        (this.aiPlayerNumber === 1) ? gameState.player2 : gameState.player1,
+        this.buildRLContext(gameState)
       );
-      if (aiAction[0] === 0 && aiAction[1] === 0) {
+      if (!aiAction) {
         return; // No movement
       }
       direction = this.actionToDirection(aiAction);
@@ -593,7 +740,8 @@ export class ExperimentManager {
         if (usingRL && this.rlAgent && typeof this.rlAgent.precalculatePolicyForGoals === 'function') {
           const goals = Array.isArray(st?.currentGoals) ? st.currentGoals : [];
           if (goals.length > 0) {
-            setTimeout(() => this.rlAgent.precalculatePolicyForGoals(goals, experimentType), 0);
+            const ctx = this.buildRLContext(st);
+            setTimeout(() => this.rlAgent.precalculatePolicyForGoals(goals, experimentType, ctx), 0);
           }
         }
       } catch (_) { /* best-effort only */ }
@@ -661,7 +809,7 @@ export class ExperimentManager {
       if (!result) return;
 
       // Apply changes to internal state via GameStateManager APIs
-      this.gameStateManager.addGoal(result.position);
+      this.gameStateManager.addGoal(result.position, 'small');
       this.gameStateManager.markNewGoalPresented(result.position, distanceCondition, {});
 
       // Reset RL pre-calculation if available
@@ -677,7 +825,8 @@ export class ExperimentManager {
         if (usingRL2 && this.rlAgent && typeof this.rlAgent.precalculatePolicyForGoals === 'function') {
           const goals2 = Array.isArray(st2?.currentGoals) ? st2.currentGoals : [];
           if (goals2.length > 0) {
-            setTimeout(() => this.rlAgent.precalculatePolicyForGoals(goals2, st2?.experimentType || null), 0);
+            const ctx2 = this.buildRLContext(st2);
+            setTimeout(() => this.rlAgent.precalculatePolicyForGoals(goals2, st2?.experimentType || null, ctx2), 0);
           }
         }
       } catch (_) { /* best-effort only */ }
@@ -690,7 +839,8 @@ export class ExperimentManager {
         if (usingRL && this.rlAgent && typeof this.rlAgent.precalculatePolicyForGoals === 'function') {
           const goals = Array.isArray(st?.currentGoals) ? st.currentGoals : [];
           if (goals.length > 0) {
-            setTimeout(() => this.rlAgent.precalculatePolicyForGoals(goals, st?.experimentType || null), 0);
+            const ctx = this.buildRLContext(st);
+            setTimeout(() => this.rlAgent.precalculatePolicyForGoals(goals, st?.experimentType || null, ctx), 0);
           }
         }
       } catch (_) { /* best-effort only */ }
@@ -779,7 +929,7 @@ export class ExperimentManager {
       console.log('🎯 [GOAL GEN] Generating new goal at position:', gen.position);
 
       // Apply changes to internal state via GameStateManager APIs
-      this.gameStateManager.addGoal(gen.position);
+      this.gameStateManager.addGoal(gen.position, 'small');
       const closerInfo = (typeof gen.distanceToPlayer2 === 'number' && typeof gen.distanceToPlayer1 === 'number')
         ? { isNewGoalCloserToPlayer2: gen.distanceToPlayer2 < gen.distanceToPlayer1 }
         : {};
@@ -810,6 +960,7 @@ export class ExperimentManager {
   }
 
   actionToDirection(action) {
+    if (!Array.isArray(action) || action.length < 2) return null;
     const [deltaRow, deltaCol] = action;
 
     if (deltaRow === -1 && deltaCol === 0) return 'up';
@@ -852,17 +1003,22 @@ export class ExperimentManager {
     let success;
     if (experimentType && experimentType.startsWith('1P')) {
       // Single player experiments - success means player reached a goal before timeout
-      const player1AtGoal = this.gameStateManager.getCurrentState().player1 &&
-        GameHelpers.isGoalReached(this.gameStateManager.getCurrentState().player1, this.gameStateManager.getCurrentState().currentGoals);
-      success = !!player1AtGoal;
+      const st = this.gameStateManager.getCurrentState();
+      const p1 = st.player1;
+      success = !!(p1 && GameHelpers.isGoalReached(p1, st.currentGoals));
+    } else if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
+      const st = this.gameStateManager.getCurrentState();
+      const td = this.gameStateManager.getCurrentTrialData();
+      success = !!GameHelpers.evaluateStagHuntOutcome(st, td).success;
     } else {
-      // 2P experiments - use result success for standalone mode
-      success = !!(result.success || result.trialComplete);
+      // 2P experiments - recompute deterministically from final positions
+      const st = this.gameStateManager.getCurrentState();
+      success = !!GameHelpers.didBothPlayersReachSameGoal(st);
     }
     this.gameStateManager.finalizeTrial(success);
 
-    // Show feedback
-    this.uiManager.showTrialFeedback(result);
+    // Show feedback with canonical success flag
+    this.uiManager.showTrialFeedback({ success, experimentType });
 
     // Move to next trial after delay
     setTimeout(() => {
@@ -941,48 +1097,6 @@ export class ExperimentManager {
     await this.startExperimentSequence();
   }
 
-  isValidGridPosition(position) {
-    return Array.isArray(position) &&
-      position.length >= 2 &&
-      Number.isInteger(position[0]) &&
-      Number.isInteger(position[1]) &&
-      position[0] >= 0 &&
-      position[0] < CONFIG.game.matrixSize &&
-      position[1] >= 0 &&
-      position[1] < CONFIG.game.matrixSize;
-  }
-
-  validateTrialDesign(experimentType, design) {
-    if (!design || typeof design !== 'object') {
-      return false;
-    }
-
-    if (!this.isValidGridPosition(design.initPlayerGrid) || !this.isValidGridPosition(design.target1)) {
-      return false;
-    }
-
-    if ((experimentType === '1P2G' || experimentType.includes('2P')) && !this.isValidGridPosition(design.target2)) {
-      return false;
-    }
-
-    if (experimentType.includes('2P')) {
-      if (!this.isValidGridPosition(design.initAIGrid)) {
-        return false;
-      }
-
-      const [player1Row, player1Col] = design.initPlayerGrid;
-      const [player2Row, player2Col] = design.initAIGrid;
-      const playersAligned = player1Row === player2Row || player1Col === player2Col;
-
-      if (!playersAligned) {
-        console.warn('⚠️ Rejecting misaligned 2P map design:', design);
-        return false;
-      }
-    }
-
-    return true;
-  }
-
   async getTrialDesign(experimentType, trialIndex) {
     // Safety check for undefined experimentType
     if (!experimentType) {
@@ -996,10 +1110,15 @@ export class ExperimentManager {
     await this.ensureMapDataLoaded();
 
     try {
-      // For collaboration experiments after trial 12, use random maps
-      if (experimentType.includes('2P') && trialIndex >= CONFIG.game.successThreshold.randomSamplingAfterTrial) {
+      // Only use post-threshold random sampling when success-threshold mode is enabled.
+      // Otherwise fixed-order experiments like StagHunt round 13 should still load map 13.
+      if (
+        CONFIG.game.successThreshold.enabled &&
+        GameConfigUtils.isTwoPlayerExperiment(experimentType) &&
+        trialIndex >= CONFIG.game.successThreshold.randomSamplingAfterTrial
+      ) {
         const randomDesign = this.mapLoader.getRandomMapForCollaborationGame(experimentType, trialIndex);
-        if (this.validateTrialDesign(experimentType, randomDesign)) {
+        if (randomDesign) {
           console.log('✅ Loaded random map design:', randomDesign);
           return randomDesign;
         }
@@ -1014,20 +1133,53 @@ export class ExperimentManager {
         return this.mapLoader.createFallbackDesign(experimentType);
       }
 
-      // Select map based on trial index (or randomly if too many trials)
-      const mapKeys = Object.keys(mapsForExperiment);
-      const selectedKey = mapKeys[trialIndex % mapKeys.length];
-      const selectedMapArray = mapsForExperiment[selectedKey];
+      const totalTrials = CONFIG.game.experiments.numTrials[experimentType] || 12;
+      if (!this.sampledMapsByExperiment[experimentType] || this.sampledMapsByExperiment[experimentType].length !== totalTrials) {
+        this.sampledMapsByExperiment[experimentType] = this.mapLoader.selectRandomMaps(mapsForExperiment, totalTrials, experimentType);
+      }
+      const selectedDesign = this.sampledMapsByExperiment[experimentType][trialIndex];
 
-      if (Array.isArray(selectedMapArray) && selectedMapArray.length > 0) {
-        const design = { ...selectedMapArray[0] }; // Clone the design
-        if (this.validateTrialDesign(experimentType, design)) {
-          console.log(`✅ Loaded map design for trial ${trialIndex}:`, design);
-          return design;
+      if (selectedDesign) {
+        let design = { ...selectedDesign };
+
+        // If this design is based on an ASCII map and has randomization enabled,
+        // apply a fresh random rotation/mirroring for EACH trial.
+        if (Array.isArray(design.asciiMap) && design.randomize) {
+          try {
+            const transformedAscii = MapParser.transformRandomly(design.asciiMap);
+            const parsed = MapParser.parseAsciiMap(transformedAscii);
+            design = { ...design, ...parsed };
+            console.log(`🎲 Applied random ASCII transform for trial ${trialIndex}`);
+          } catch (e) {
+            console.warn('⚠️ Failed to apply ASCII randomization, using base design:', e?.message || e);
+          }
         }
+
+        const shouldSwapStarts = GameConfigUtils.shouldSwapPlayerStartPositions(experimentType, trialIndex);
+        if (
+          shouldSwapStarts &&
+          Array.isArray(design.initPlayerGrid) &&
+          Array.isArray(design.initAIGrid)
+        ) {
+          design = {
+            ...design,
+            initPlayerGrid: [...design.initAIGrid],
+            initAIGrid: [...design.initPlayerGrid],
+            playerStartPositionsSwapped: true
+          };
+          console.log(`🔄 Swapped red/orange start positions for trial ${trialIndex}`);
+        } else {
+          design = {
+            ...design,
+            playerStartPositionsSwapped: false
+          };
+        }
+
+        console.log(`✅ Loaded map design for trial ${trialIndex}:`, design);
+        return design;
       }
 
-      console.warn('⚠️ Invalid map structure or layout, using fallback design');
+      console.warn('⚠️ Invalid map structure, using fallback design');
       return this.mapLoader.createFallbackDesign(experimentType);
 
     } catch (error) {
@@ -1121,12 +1273,12 @@ export class ExperimentManager {
     // Store completion callback
     this.currentTrialCompleteCallback = onComplete;
 
-    // Notify GameApplication to start inactivity tracking for human-human trials
+    // Notify GameApplication of trial start for ALL experiments
+    // This resets its trial-complete guard and starts inactivity tracking when applicable
     try {
-      // Get GameApplication instance from window if available
       const gameApp = window.__GAME_APPLICATION__;
-      if (gameApp && experimentType.includes('2P')) {
-        console.log('🔗 Notifying GameApplication of trial start for inactivity tracking');
+      if (gameApp) {
+        console.log('🔗 Notifying GameApplication of trial start');
         gameApp.handleTrialStart?.(experimentType, experimentIndex, trialIndex);
       }
     } catch (error) {
@@ -1185,6 +1337,8 @@ export class ExperimentManager {
         this.runTrial1P2G();
         break;
       case '2P2G':
+      case 'StagHunt':
+      case 'StagHuntTwoStags':
         this.runTrial2P2G();
         break;
       case '2P3G':
@@ -1228,22 +1382,33 @@ export class ExperimentManager {
       console.warn('⚠️ Could not notify GameApplication of trial completion:', error);
     }
 
-    // Determine success based on experiment type
+    // Determine success with authoritative override when provided
     const currentTrialData = this.gameStateManager.getCurrentTrialData();
-    const experimentType = this.gameStateManager.getCurrentState().experimentType;
+    const currentState = this.gameStateManager.getCurrentState();
+    const experimentType = currentState.experimentType;
     let success;
+    const hasAuthoritative = (result && typeof result.success === 'boolean');
     if (experimentType && experimentType.startsWith('1P')) {
-      // Single player experiments - success means player reached a goal before timeout
-      // Check if player reached a goal (not just that the move was processed successfully)
-      const player1AtGoal = this.gameStateManager.getCurrentState().player1 &&
-        GameHelpers.isGoalReached(this.gameStateManager.getCurrentState().player1, this.gameStateManager.getCurrentState().currentGoals);
-      success = !!player1AtGoal;
+      success = hasAuthoritative ? !!result.success : (() => {
+        const p1 = currentState.player1;
+        return !!(p1 && GameHelpers.isGoalReached(p1, currentState.currentGoals));
+      })();
+    } else if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
+      const stagHuntOutcome = GameHelpers.evaluateStagHuntOutcome(currentState, currentTrialData);
+      success = hasAuthoritative ? !!result.success && stagHuntOutcome.success : stagHuntOutcome.success;
+      currentTrialData.collaborationSucceeded = !!stagHuntOutcome.collaborationSucceeded;
+      this.gameStateManager.trialData = {
+        ...this.gameStateManager.trialData,
+        collaborationSucceeded: !!stagHuntOutcome.collaborationSucceeded
+      };
     } else {
-      // 2P experiments - use collaboration success (coerce to boolean; default false)
-      if (typeof currentTrialData.collaborationSucceeded !== 'boolean') {
-        currentTrialData.collaborationSucceeded = false;
-      }
-      success = currentTrialData.collaborationSucceeded === true;
+      // 2P experiments - deterministically recompute success from final positions
+      const recomputed = !!GameHelpers.didBothPlayersReachSameGoal(currentState);
+      // If authoritative success disagrees, override with recomputed
+      success = hasAuthoritative ? !!result.success && recomputed : recomputed;
+      // Force trial data flag to align with recomputed success for consistency
+      currentTrialData.collaborationSucceeded = !!success;
+      this.gameStateManager.trialData = { ...this.gameStateManager.trialData, collaborationSucceeded: !!success };
     }
 
     // Finalize trial data
@@ -1252,7 +1417,7 @@ export class ExperimentManager {
     // Get trial data for timeline
     const trialData = {
       ...result,
-      success: success, // Override with correct success value
+      success: !!success, // Ensure both clients store identical boolean
       trialData: this.gameStateManager.getCurrentTrialData(),
       gameState: this.gameStateManager.getCurrentState()
     };
@@ -1268,10 +1433,39 @@ export class ExperimentManager {
     const { success, experimentType, trialIndex, canvasContainer } = data;
     console.log(`📊 Showing trial feedback for ${experimentType} trial ${trialIndex}`);
 
-    // Determine message type based on experiment type
-    const messageType = experimentType.startsWith('1P') ? 'single' : 'collaboration';
+    let messageType;
 
-    // Create feedback display in the provided container
+    if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
+      const td = this.gameStateManager.getCurrentTrialData();
+      const goalTypes = this.gameStateManager.getCurrentState()?.currentGoalTypes || [];
+      const humanIdx = td?.humanPlayerIndex ?? 0;       // 0 = player1, 1 = player2
+      const p1Goal = td?.player1FinalReachedGoal;       // goal index, or -1/null = none
+      const p2Goal = td?.player2FinalReachedGoal;
+
+      const humanGoal  = humanIdx === 0 ? p1Goal  : p2Goal;
+      const partnerGoal = humanIdx === 0 ? p2Goal : p1Goal;
+
+      const humanReachedBig =
+        Number.isInteger(humanGoal) && humanGoal >= 0 &&
+        goalTypes[humanGoal] === 'big';
+      const partnerReachedBig =
+        Number.isInteger(partnerGoal) && partnerGoal >= 0 &&
+        goalTypes[partnerGoal] === 'big';
+      const humanReachedSmall =
+        Number.isInteger(humanGoal) && humanGoal >= 0 &&
+        goalTypes[humanGoal] === 'small';
+
+      if (humanReachedBig && partnerReachedBig && humanGoal === partnerGoal) {
+        messageType = 'stag-hunt-both-stag';
+      } else if (humanReachedSmall) {
+        messageType = 'stag-hunt-human-rabbit';
+      } else {
+        messageType = 'stag-hunt-human-nothing';
+      }
+    } else {
+      messageType = experimentType.startsWith('1P') ? 'single' : 'collaboration';
+    }
+
     this.uiManager.showTrialFeedbackInContainer(success, canvasContainer, messageType);
   }
 
@@ -1282,6 +1476,7 @@ export class ExperimentManager {
     this.currentExperimentIndex = 0;
     this.currentTrialIndex = 0;
     this.isRunning = false;
+    this.sampledMapsByExperiment = {};
   }
 
   pause() {

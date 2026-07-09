@@ -1,16 +1,7 @@
 // Map loading and randomization utility based on legacy version
 import { CONFIG } from '../config/gameConfig.js';
-import mapsFor1P1GRaw from '../../../config/MapsFor1P1G.js?raw';
-import mapsFor1P2GRaw from '../../../config/MapsFor1P2G.js?raw';
-import mapsFor2P2GRaw from '../../../config/MapsFor2P2G.js?raw';
-import mapsFor2P3GRaw from '../../../config/MapsFor2P3G.js?raw';
-
-const BUNDLED_MAP_FILES = {
-  '1P1G': mapsFor1P1GRaw,
-  '1P2G': mapsFor1P2GRaw,
-  '2P2G': mapsFor2P2GRaw,
-  '2P3G': mapsFor2P3GRaw
-};
+import { MapParser } from './MapParser.js';
+import { StagHuntTwoStagsMaps } from '../data/StagHuntTwoStagsMaps.js';
 
 export class MapLoader {
   constructor() {
@@ -22,17 +13,106 @@ export class MapLoader {
     this.mapData = await this.loadMapData();
   }
 
-  // Load map data from bundled config files so static GitHub Pages builds work
+  // Process loaded map data to handle ASCII maps
+  processMapData(mapData) {
+    if (!mapData) return mapData;
+
+    const processed = {};
+    for (const [key, maps] of Object.entries(mapData)) {
+      if (Array.isArray(maps)) {
+        processed[key] = maps.map(mapDesign => {
+          // Normalize new StagHunt 18-map format (orange/red/stag/rabbits)
+          // to the legacy field names the rest of the client expects, while
+          // preserving all rich metadata (map_id, ascii, signaling, *_summary).
+          let design = this.normalizeStagHuntMap(mapDesign);
+
+          if (design.asciiMap) {
+            const parsed = MapParser.parseAsciiMap(design.asciiMap);
+            // Merge any extra properties from the original object (e.g. mapType)
+            return { ...design, ...parsed };
+          }
+          return design;
+        });
+      } else {
+        processed[key] = maps;
+      }
+    }
+    return processed;
+  }
+
+  // If a map uses the new StagHunt schema (orange/red/stag/rabbits), add the
+  // legacy alias fields the client consumes downstream, while keeping all
+  // metadata fields intact for export.
+  normalizeStagHuntMap(m) {
+    if (!m || typeof m !== 'object') return m;
+    const hasNew = Array.isArray(m.orange) && Array.isArray(m.red) &&
+      Array.isArray(m.stag) && Array.isArray(m.rabbits);
+    if (!hasNew) return m;
+    return {
+      ...m,
+      initPlayerGrid: [...m.red],   // Non-Signaler (red) start
+      initAIGrid: [...m.orange],    // Signaler (orange) start
+      bigGoals: [[...m.stag]],
+      smallGoals: m.rabbits.map(r => [...r]),
+      gridSize: m.grid_size ?? m.gridSize ?? 9,
+      mapType: m.mapType || 'StagHunt'
+    };
+  }
+
+  // Load map data from server API
   async loadMapData() {
-    console.log('🗺️ Loading bundled map data...');
+    // Choose source based on CONFIG
+    try {
+      const source = (CONFIG?.maps?.source) || 'server';
+      if (source === 'python-json') {
+        console.log('🗺️ Loading map data from Python JSON...');
+        const data = await this.loadMapDataFromPythonJson();
+        // Post-process each experiment type's map data
+        for (const type in data) {
+          data[type] = this.processMapData(data[type]);
+        }
+        return data;
+      }
+    } catch (_) { /* ignore, fallback to server */ }
+
+    console.log('🗺️ Loading map data from server...');
+
+    // Check if server is running first
+    const serverRunning = await this.checkServerHealth();
+    if (!serverRunning) {
+      console.warn('⚠️ Game server not running - using fallback maps for all experiment types');
+      console.log('💡 To get real maps and enable multiplayer, start the server with: npm run dev');
+      return this.loadAllFallbackMaps();
+    }
+
+    const experimentTypes = ['1P1G', '1P2G', '2P2G', '2P3G', 'StagHunt', 'StagHuntTwoStags'];
     const maps = {};
-    
-    for (const [expType, rawMapFile] of Object.entries(BUNDLED_MAP_FILES)) {
+
+    for (const expType of experimentTypes) {
       try {
-        maps[expType] = this.parseBundledMapFile(expType, rawMapFile);
-        console.log(`✅ Loaded ${Object.keys(maps[expType]).length} ${expType} maps from bundled config`);
+        console.log(`🌐 Fetching ${expType} maps from server...`);
+        const response = await fetch(`/api/maps/${expType}`);
+
+        if (response.ok) {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const data = await response.json();
+            // Process maps to handle ASCII format if present
+            maps[expType] = this.processMapData(data.maps);
+            console.log(`✅ Loaded ${data.mapCount} ${expType} maps from server`);
+          } else {
+            throw new Error('Server returned non-JSON response (likely HTML error page)');
+          }
+        } else {
+          console.warn(`⚠️ Server request failed for ${expType} (${response.status}), using fallback`);
+          maps[expType] = this.getFallbackMaps(expType);
+        }
       } catch (error) {
-        console.warn(`⚠️ Failed to load bundled ${expType} maps, using fallback:`, error.message);
+        if (error.message.includes('<!DOCTYPE')) {
+          console.warn(`⚠️ Server not running or API not available for ${expType}, using fallback maps`);
+        } else {
+          console.warn(`⚠️ Failed to load ${expType} maps from server, using fallback:`, error.message);
+        }
         maps[expType] = this.getFallbackMaps(expType);
       }
     }
@@ -46,17 +126,29 @@ export class MapLoader {
     return maps;
   }
 
-  parseBundledMapFile(experimentType, rawMapFile) {
-    const varName = `MapsFor${experimentType}`;
-    const regex = new RegExp(`var\\s+${varName}\\s*=\\s*({[\\s\\S]*?});`);
-    const match = rawMapFile.match(regex);
-
-    if (!match) {
-      throw new Error(`Could not find ${varName} declaration`);
+  async loadMapDataFromPythonJson() {
+    const base = (CONFIG?.maps?.pythonJsonBasePath) || '/python/gameDesign/output';
+    const experimentTypes = ['1P1G', '1P2G', '2P2G', '2P3G', 'StagHunt', 'StagHuntTwoStags'];
+    const maps = {};
+    for (const expType of experimentTypes) {
+      try {
+        const url = `${base}/${expType}.json`;
+        console.log(`🌐 Fetching ${expType} maps from ${url} ...`);
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        maps[expType] = data;
+        const count = data ? Object.keys(data).length : 0;
+        console.log(`✅ Loaded ${count} ${expType} maps from Python JSON`);
+      } catch (e) {
+        console.warn(`⚠️ Failed to load ${expType} from Python JSON, using fallback:`, e?.message || e);
+        maps[expType] = this.getFallbackMaps(expType);
+      }
     }
-
-    return JSON.parse(match[1]);
+    return maps;
   }
+
+  // Legacy loading methods removed - now using server API
 
   // Fallback generation methods
   generate1P1GMaps() {
@@ -69,7 +161,7 @@ export class MapLoader {
       const startCol = 1 + (i % 3);
       const goalRow = 2 + Math.floor(i / 4);
       const goalCol = 10 + (i % 5);
-      
+
       maps[String(i)] = [{
         initPlayerGrid: [startRow, startCol],
         target1: [goalRow, goalCol],
@@ -153,10 +245,31 @@ export class MapLoader {
     return maps;
   }
 
+  generateStagHuntMaps() {
+    const maps = {};
+    // Simple fallback stag hunt map
+    for (let i = 0; i < 10; i++) {
+      maps[String(i)] = [{
+        initPlayerGrid: [8, 0],
+        initAIGrid: [0, 4],
+        bigGoals: [[4, 8]],
+        smallGoals: [[5, 4], [7, 1]],
+        obstacles: [],
+        gridSize: 9,
+        mapType: 'StagHunt'
+      }];
+    }
+    return maps;
+  }
+
+  generateStagHuntTwoStagsMaps() {
+    return JSON.parse(JSON.stringify(StagHuntTwoStagsMaps));
+  }
+
   // Get maps for specific experiment type
   getMapsForExperiment(experimentType) {
     console.log(`🎯 Getting maps for experiment: ${experimentType}`);
-    
+
     if (!this.mapData) {
       console.warn('⚠️ Map data not loaded yet, using fallback');
       return this.getFallbackMaps(experimentType);
@@ -167,9 +280,44 @@ export class MapLoader {
       console.error(`❌ No map data available for experiment type: ${experimentType}`);
       return this.getFallbackMaps(experimentType);
     }
-    
-    console.log(`✅ Found ${Object.keys(mapData).length} maps for ${experimentType}`);
-    return mapData;
+
+    const filteredMapData = this.filterMapsForExperiment(mapData, experimentType);
+    console.log(`✅ Found ${Object.keys(filteredMapData).length} maps for ${experimentType}`);
+    return filteredMapData;
+  }
+
+  getConfiguredSignalingPathTypes(experimentType) {
+    const raw = CONFIG?.game?.experiments?.signalingPathTypeFilter?.[experimentType];
+    if (raw == null) return null;
+
+    const values = Array.isArray(raw) ? raw : [raw];
+    const normalized = values
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+
+    return normalized.length > 0 ? new Set(normalized) : null;
+  }
+
+  filterMapsForExperiment(mapData, experimentType) {
+    if (!mapData || typeof mapData !== 'object') return mapData;
+
+    const allowedPathTypes = this.getConfiguredSignalingPathTypes(experimentType);
+    if (!allowedPathTypes) return mapData;
+
+    const filteredEntries = Object.entries(mapData).filter(([, mapArray]) => {
+      const design = Array.isArray(mapArray) ? mapArray[0] : null;
+      const pathType = design?.signaling?.path_type;
+      return allowedPathTypes.has(String(pathType || '').trim());
+    });
+
+    const filteredMapData = Object.fromEntries(filteredEntries);
+    console.log(
+      `🧪 Applied signaling.path_type filter for ${experimentType}: ` +
+      `${Array.from(allowedPathTypes).join(', ')} ` +
+      `(${filteredEntries.length}/${Object.keys(mapData).length} maps kept)`
+    );
+
+    return filteredMapData;
   }
 
   // Get fallback maps when config files are not available
@@ -183,14 +331,20 @@ export class MapLoader {
         return this.generate2P2GMaps();
       case '2P3G':
         return this.generate2P3GMaps();
+      case 'StagHunt':
+        return this.generateStagHuntMaps();
+      case 'StagHuntTwoStags':
+        return this.generateStagHuntTwoStagsMaps();
       default:
         console.error(`Unknown experiment type: ${experimentType}`);
         return {};
     }
   }
 
-  // Select random maps from map data (legacy compatible)
-  selectRandomMaps(mapData, nTrials) {
+  // Select maps from map data. Order is controlled by CONFIG.game.experiments.mapOrder[experimentType]:
+  //   'fixed'  -> maps returned in ascending numeric key order (1, 2, 3, ...)
+  //   'random' -> shuffled (default, legacy behavior)
+  selectRandomMaps(mapData, nTrials, experimentType) {
     if (!mapData || typeof mapData !== 'object') {
       console.error('Invalid map data provided:', mapData);
       return [];
@@ -202,22 +356,95 @@ export class MapLoader {
       return [];
     }
 
-    const selectedMaps = [];
-    for (let i = 0; i < nTrials; i++) {
-      const randomKey = keys[Math.floor(Math.random() * keys.length)];
-      // Map data structure is: { "key": [{ designObject }] }
-      const mapArray = mapData[randomKey];
-      if (Array.isArray(mapArray) && mapArray.length > 0) {
-        selectedMaps.push({ ...mapArray[0] }); // Clone the design object
+    const orderMode = (experimentType && CONFIG?.game?.experiments?.mapOrder?.[experimentType]) || 'random';
+
+    let orderedKeys;
+    if (orderMode === 'fixed') {
+      // Sort numerically so "1","2",...,"10","18" instead of lexical "1","10","11",...
+      orderedKeys = [...keys].sort((a, b) => {
+        const na = Number(a), nb = Number(b);
+        if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+        return String(a).localeCompare(String(b));
+      });
+      console.log(`📜 Using FIXED map order for ${experimentType}: ${orderedKeys.join(', ')}`);
+    } else {
+      orderedKeys = [...keys];
+      for (let i = orderedKeys.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [orderedKeys[i], orderedKeys[j]] = [orderedKeys[j], orderedKeys[i]];
       }
     }
 
-    console.log(`Selected ${selectedMaps.length} random maps from ${keys.length} available maps`);
+    const selectedMaps = [];
+    for (let i = 0; i < nTrials; i++) {
+      const randomKey = orderedKeys[i % orderedKeys.length];
+      // Map data structure is: { "key": [{ designObject }] }
+      const mapArray = mapData[randomKey];
+      if (Array.isArray(mapArray) && mapArray.length > 0) {
+        let mapDesign = { ...mapArray[0] }; // Clone the design object
+
+        // Apply randomization
+        // If map uses asciiMap, prefer ASCII transformation for robustness
+        if (mapDesign.asciiMap && (mapDesign.randomize || mapDesign.randomizeOrientation)) {
+             const transformedAscii = MapParser.transformRandomly(mapDesign.asciiMap);
+             const parsed = MapParser.parseAsciiMap(transformedAscii);
+             // Overwrite coordinates with new parsed ones, preserving other props
+             mapDesign = { ...mapDesign, ...parsed };
+        }
+        // Fallback to legacy coordinate transformation if requested and no asciiMap
+        else if (mapDesign.randomizeOrientation) {
+             mapDesign = this.randomizeMapOrientation(mapDesign);
+        }
+
+        selectedMaps.push(mapDesign);
+      }
+    }
+
+    console.log(`Selected ${selectedMaps.length} maps (order=${orderMode}) from ${keys.length} available maps`);
     return selectedMaps;
+  }
+
+  // Randomly rotate or mirror map coordinates
+  randomizeMapOrientation(design) {
+    const size = CONFIG.game.matrixSize;
+    const transformations = [
+      (r, c) => [r, c],           // Identity
+      (r, c) => [c, size - 1 - r], // Rotate 90
+      (r, c) => [size - 1 - r, size - 1 - c], // Rotate 180
+      (r, c) => [size - 1 - c, r], // Rotate 270
+      (r, c) => [size - 1 - r, c], // Flip Vertical (Mirror X)
+      (r, c) => [r, size - 1 - c], // Flip Horizontal (Mirror Y)
+      (r, c) => [c, r],            // Transpose (Diag Mirror)
+      (r, c) => [size - 1 - c, size - 1 - r] // Anti-Transpose
+    ];
+
+    const randomTransform = transformations[Math.floor(Math.random() * transformations.length)];
+
+    const transformPoint = (point) => {
+        if (!point) return point;
+        return randomTransform(point[0], point[1]);
+    };
+
+    const newDesign = { ...design };
+
+    if (design.initPlayerGrid) newDesign.initPlayerGrid = transformPoint(design.initPlayerGrid);
+    if (design.initAIGrid) newDesign.initAIGrid = transformPoint(design.initAIGrid);
+    if (design.target1) newDesign.target1 = transformPoint(design.target1);
+    if (design.target2) newDesign.target2 = transformPoint(design.target2);
+
+    if (design.smallGoals) newDesign.smallGoals = design.smallGoals.map(transformPoint);
+    if (design.bigGoals) newDesign.bigGoals = design.bigGoals.map(transformPoint);
+    if (design.obstacles) newDesign.obstacles = design.obstacles.map(transformPoint);
+
+    return newDesign;
   }
 
   // Get random map for collaboration games (post trial 12)
   getRandomMapForCollaborationGame(experimentType, trialIndex) {
+    if (!CONFIG.game.successThreshold.enabled) {
+      return null;
+    }
+
     // After trial 12, use random sampling
     if (trialIndex >= CONFIG.game.successThreshold.randomSamplingAfterTrial) {
       const mapData = this.getMapsForExperiment(experimentType);
@@ -288,6 +515,24 @@ export class MapLoader {
         target1: [1, 8],
         target2: [14, 8],
         mapType: '2P3G'
+      },
+      'StagHunt': {
+        initPlayerGrid: [8, 0],
+        initAIGrid: [0, 4],
+        bigGoals: [[4, 8]],
+        smallGoals: [[5, 4], [7, 1]],
+        obstacles: [],
+        gridSize: 9,
+        mapType: 'StagHunt'
+      },
+      'StagHuntTwoStags': {
+        initPlayerGrid: [8, 0],
+        initAIGrid: [0, 4],
+        bigGoals: [[4, 8], [4, 0]],
+        smallGoals: [[5, 4], [7, 1]],
+        obstacles: [],
+        gridSize: 9,
+        mapType: 'StagHuntTwoStags'
       }
     };
 
@@ -297,7 +542,7 @@ export class MapLoader {
   // Server health check
   async checkServerHealth() {
     try {
-      const response = await fetch('/health', { 
+      const response = await fetch('/health', {
         method: 'GET',
         timeout: 2000 // 2 second timeout
       });
@@ -314,7 +559,9 @@ export class MapLoader {
       '1P1G': this.getFallbackMaps('1P1G'),
       '1P2G': this.getFallbackMaps('1P2G'),
       '2P2G': this.getFallbackMaps('2P2G'),
-      '2P3G': this.getFallbackMaps('2P3G')
+      '2P3G': this.getFallbackMaps('2P3G'),
+      'StagHunt': this.getFallbackMaps('StagHunt'),
+      'StagHuntTwoStags': this.getFallbackMaps('StagHuntTwoStags')
     };
   }
 }

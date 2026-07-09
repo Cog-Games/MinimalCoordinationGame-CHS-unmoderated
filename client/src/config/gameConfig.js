@@ -73,13 +73,20 @@ export const CONFIG = {
 
   // Game settings (from original NODEGAME_CONFIG)
   game: {
-    name: 'GridWorldExperiment',
+    name: 'GridWorldExperiment_StagHunt',
     version: '2.0.0',
     prolificCompletionCode: getEnvVar('VITE_PROLIFIC_COMPLETION_CODE', 'CTNDR8GV'),
     matrixSize: 15,
     maxGameLength: 60,
-    /** 'joint' | 'individual' — RL study arm for this participant (random once per tab; see resolveParticipantRLCondition) */
+    /** 'joint' | 'individual' — retained for the original MinimalCoordination RL study arm. */
     studyRLCondition: participantRLCondition,
+
+    // Two-player move mode. Stag Hunt uses simultaneous human + bot moves.
+    moveMode: 'simultaneous',
+    turnTaking: {
+      startingPlayer: 1
+    },
+    swapPlayerStartPositionsHalfTime: true,
 
     // Player configuration
     players: {
@@ -89,28 +96,41 @@ export const CONFIG = {
         description: 'Human player (you)'
       },
       player2: {
-        // Types: 'human' | 'gpt' | 'rl_individual' | 'rl_joint'
-        // Legacy alias 'ai' is treated as 'rl_joint'
-        type: assignedRLPartnerType,
+        // Types: 'human' | 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_individual' | 'rl_joint' | 'we_intent_js'
+        // Legacy alias 'ai' is treated as 'rl_joint'. Stag Hunt defaults to the SA bot.
+        type: 'we_intent_js',
         color: 'purple',
-        description: 'Human, GPT, or RL partner'
+        description: 'Human, GPT, RL, or SA-model partner'
       }
     },
 
     // Experiment configuration
     experiments: {
-      // order: ['1P1G'],
-      // order: ['1P2G'],
-      // order: [ '2P3G'],
-      // order: ['1P2G','2P3G'],
-      // order: ['2P2G', '2P3G'],
-      order: ['1P1G', '1P2G', '2P2G', '2P3G'], // Full experiment order
+      // order: ['1P1G', '1P2G', '2P2G', '2P3G'], // Original MinimalCoordination order
+      order: ['StagHunt'],
 
       numTrials: {
-        '1P1G': 2, // 2
-        '1P2G': 8, // 8
-        '2P2G': 4, // 4
-        '2P3G': 8, // 8
+        '1P1G': 2,
+        '1P2G': 8,
+        '2P2G': 4,
+        '2P3G': 8,
+        'StagHunt': 18,
+        'StagHuntTwoStags': 4
+      },
+
+      // 'fixed' keeps the 18 Stag Hunt maps in numeric order for development.
+      mapOrder: {
+        '1P1G': 'random',
+        '1P2G': 'random',
+        '2P2G': 'random',
+        '2P3G': 'random',
+        'StagHunt': 'fixed',
+        'StagHuntTwoStags': 'random'
+      },
+
+      signalingPathTypeFilter: {
+        'StagHunt': null,
+        'StagHuntTwoStags': null
       }
     },
 
@@ -121,6 +141,17 @@ export const CONFIG = {
       minTrialsBeforeCheck: 12,
       maxTrials: 24,
       randomSamplingAfterTrial: 12
+    },
+
+    rewards: {
+      initialPointsPerTrial: 15,
+      stepPenalty: 1,
+      smallGoalReward: 3,
+      bigGoalJointReward: 10
+    },
+
+    dualGoals: {
+      enabledExperiments: ['2P2G', 'StagHunt', 'StagHuntTwoStags']
     },
 
     // Timing configurations
@@ -144,22 +175,39 @@ export const CONFIG = {
       type: assignedAgentMode,
       delay: 500,
       independentDelay: 300,
-      // When true, AI/GPT moves are synchronized with the human input
-      // i.e., on each human key press, AI/GPT generates a move and both apply before a single redraw
+      // When true, AI/GPT/SA moves are synchronized with human input.
       synchronizedMoves: true,
-      // Optional GPT agent client defaults (non-sensitive)
       gpt: {
-        // If set, forwarded to server; server may override model
         model: 'gpt',
         temperature: 0,
-        // Include past trajectories in GPT prompt
         memory: {
           enabled: true,
-          // Limit steps appended to prompt per player to control token usage
           maxSteps: 50
         }
+      },
+      vlm: {
+        temperature: 0,
+        memory: {
+          enabled: true,
+          maxSteps: 3
+        }
+      },
+      weAgent: {
+        betaUtility: 3.0,
+        alphaSignal: 2.0,
+        gammaWait: 1.0,
+        thetaRole: 1.0,
+        deltaCommit: 0.5,
+        likelihoodScale: 1.5,
+        continueSignalingAfterCommit: true,
+        stagUtilityBonus: 2.0
       }
     }
+  },
+
+  maps: {
+    source: getEnvVar('VITE_MAP_SOURCE', 'server'),
+    pythonJsonBasePath: '/python/gameDesign/output'
   },
 
   // Visual settings
@@ -253,8 +301,8 @@ export const CONFIG = {
     // human to press space before falling back to AI partner
     matchPlayReadyTimeout: 10000,
     // Fallback AI partner type when human-human matching fails
-    // Allowed: 'gpt' | 'rl_individual' | 'rl_joint'
-    fallbackAIType: assignedRLPartnerType,
+    // Allowed: 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_individual' | 'rl_joint' | 'we_intent_js'
+    fallbackAIType: 'we_intent_js',
     // Partner inactivity settings
     inactivityFallback: {
       // Enable automatic fallback to AI when partner is inactive
@@ -286,7 +334,9 @@ export const GAME_OBJECTS = {
   player: 1,
   ai_player: 2,
   goal: 3,
-  obstacle: 4
+  goal_small: 3,
+  obstacle: 4,
+  goal_big: 5
 };
 
 // Movement directions (from original setup.js)
@@ -317,23 +367,33 @@ export const DIRECTIONS = {
 
 // Export utility functions
 export const GameConfigUtils = {
+  isTwoPlayerExperiment(experimentType) {
+    const exp = String(experimentType || '').toUpperCase();
+    return exp.includes('2P') || this.isStagHuntExperiment(exp);
+  },
+
+  isStagHuntExperiment(experimentType) {
+    const exp = String(experimentType || '').toUpperCase();
+    return exp === 'STAGHUNT' || exp === 'STAGHUNTTWOSTAGS';
+  },
+
   setPlayerType(playerIndex, type) {
     // Normalize legacy alias
     const normalized = (type === 'ai') ? 'rl_joint' : type;
-    const allowed = ['human', 'gpt', 'rl_individual', 'rl_joint'];
+    const allowed = [
+      'human', 'gpt', 'gpt-ToM', 'vlm', 'vlm-ToM',
+      'rl_individual', 'rl_joint', 'rl_individual_python', 'we_intent_js'
+    ];
     if (!allowed.includes(normalized)) return;
     CONFIG.game.players[`player${playerIndex}`].type = normalized;
 
-    // Keep RL agent mode consistent when setting player2 to RL types
-    if (playerIndex === 2) {
-      if (normalized === 'rl_joint') {
-        CONFIG.game.agent.type = 'joint';
-        CONFIG.game.studyRLCondition = 'joint';
-      }
-      if (normalized === 'rl_individual') {
-        CONFIG.game.agent.type = 'individual';
-        CONFIG.game.studyRLCondition = 'individual';
-      }
+    if (normalized === 'rl_joint') {
+      CONFIG.game.agent.type = 'joint';
+      if (playerIndex === 2) CONFIG.game.studyRLCondition = 'joint';
+    }
+    if (normalized === 'rl_individual' || normalized === 'rl_individual_python') {
+      CONFIG.game.agent.type = 'individual';
+      if (playerIndex === 2) CONFIG.game.studyRLCondition = 'individual';
     }
   },
 
@@ -402,12 +462,33 @@ export const GameConfigUtils = {
     return CONFIG.game.experiments.numTrials[experimentType] || 12;
   },
 
-  // Only enable synchronized human turns for two-player experiments
-  isSynchronizedHumanTurnsEnabled(experimentType) {
+  getMoveMode(experimentType) {
     try {
-      const exp = String(experimentType || '').toUpperCase();
-      const isTwoPlayer = exp.includes('2P');
-      return isTwoPlayer && !!(CONFIG?.multiplayer?.synchronizedHumanTurns);
+      if (!this.isTwoPlayerExperiment(experimentType)) return null;
+      const mode = CONFIG?.game?.moveMode;
+      if (mode === 'simultaneous' || mode === 'turn-taking' || mode === 'free') {
+        return mode;
+      }
+      return 'simultaneous';
+    } catch (_) {
+      return null;
+    }
+  },
+
+  // Human-human synchronization remains opt-in for the MinimalCoordination UI.
+  isSynchronizedHumanTurnsEnabled(experimentType) {
+    return this.getMoveMode(experimentType) === 'simultaneous' && !!(CONFIG?.multiplayer?.synchronizedHumanTurns);
+  },
+
+  isTurnTakingEnabled(experimentType) {
+    return this.getMoveMode(experimentType) === 'turn-taking';
+  },
+
+  shouldSwapPlayerStartPositions(experimentType, trialIndex) {
+    try {
+      if (!this.isTwoPlayerExperiment(experimentType)) return false;
+      if (!CONFIG?.game?.swapPlayerStartPositionsHalfTime) return false;
+      return (Number(trialIndex) % 2) === 1;
     } catch (_) {
       return false;
     }

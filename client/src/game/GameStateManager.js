@@ -28,9 +28,18 @@ export class GameStateManager {
       player1: null,
       player2: null,
       currentGoals: [],
+      // Parallel to currentGoals; each entry is 'small' | 'big'
+      currentGoalTypes: [],
       experimentType: null,
       trialIndex: 0,
-      gameMode: 'human-ai'
+      gameMode: 'human-ai',
+      moveMode: null,
+      playerStartPositionsSwapped: false,
+      player1CurrentPoints: 0,
+      player2CurrentPoints: 0,
+      player1TotalPoints: 0,
+      player2TotalPoints: 0,
+      currentTurnPlayer: null
     };
 
     // Clear real-time synchronization state
@@ -80,12 +89,28 @@ export class GameStateManager {
       partnerFallbackAIType: null, // 'gpt' | 'joint-rl' | 'individual-rl' | etc.
       // Which side is controlled by human vs AI (0-based index for consistency with app)
       humanPlayerIndex: null,
-      aiPlayerIndex: null
+      aiPlayerIndex: null,
+      playerStartPositionsSwapped: false,
+      player1CurrentPoints: 0,
+      player2CurrentPoints: 0,
+      player1OutcomeBonus: 0,
+      player2OutcomeBonus: 0,
+      player1OutcomeApplied: false,
+      player2OutcomeApplied: false,
+      player1RoundPoints: 0,
+      player2RoundPoints: 0,
+      player1TotalPoints: 0,
+      player2TotalPoints: 0,
+      player1TotalCommitted: false,
+      player2TotalCommitted: false
     };
 
     this.experimentData = {
       allTrialsData: [],
       currentExperiment: null,
+      player1TotalPoints: 0,
+      player2TotalPoints: 0,
+      totalScore: 0,
       successThreshold: {
         consecutiveSuccesses: 0,
         totalTrialsCompleted: 0,
@@ -104,6 +129,10 @@ export class GameStateManager {
   }
 
   initializeTrial(trialIndex, experimentType, design) {
+    // Retain the full map design for this trial so downstream consumers
+    // (RL planner, reward calculator) can read per-map fields like
+    // `utility_summary`, `stag`, `rabbits`, etc.
+    this.currentMapDesign = design || null;
     this.trialData.trialIndex = trialIndex;
     this.trialData.experimentType = experimentType;
     this.trialData.partnerAgentType = this.getPartnerAgentType(experimentType);
@@ -126,6 +155,8 @@ export class GameStateManager {
     this.trialData.initialGoalPositions = [];
     this.trialData.player1CurrentGoal = [];
     this.trialData.player2CurrentGoal = [];
+    // Ensure AI inferred goals are per-trial (avoid carry-over/shared reference)
+    this.trialData.aiInferredOtherGoals = [];
 
     // Reset goal detection variables
     this.trialData.player1FirstDetectedGoal = null;
@@ -135,6 +166,10 @@ export class GameStateManager {
     this.trialData.firstDetectedSharedGoal = null;
     this.trialData.player1GoalReachedStep = -1;
     this.trialData.player2GoalReachedStep = -1;
+    // Small goals (rabbits) claimed by any player. Once claimed, the other
+    // player cannot claim the same small goal. Stored as a Set of goal indices.
+    this.trialData.claimedSmallGoals = new Set();
+    this.currentState.claimedSmallGoals = this.trialData.claimedSmallGoals;
 
     // Reset new goal variables
     this.trialData.newGoalPresentedTime = null;
@@ -151,9 +186,11 @@ export class GameStateManager {
     this.trialData.partnerFallbackReason = null;
     this.trialData.partnerFallbackStage = null;
     this.trialData.partnerFallbackTime = null;
+    this.trialData.playerStartPositionsSwapped = !!design?.playerStartPositionsSwapped;
+    this.initializeScoreStateForTrial(experimentType);
     // Initialize who is human vs AI at trial start (for 2P modes)
     try {
-      if (String(experimentType || '').includes('2P')) {
+      if (GameConfigUtils.isTwoPlayerExperiment(experimentType)) {
         const t1 = CONFIG?.game?.players?.player1?.type;
         const t2 = CONFIG?.game?.players?.player2?.type;
         if (t1 === 'human' && t2 !== 'human') {
@@ -185,8 +222,8 @@ export class GameStateManager {
       this.trialData.distanceCondition = cond; // legacy naming for saving
       this.currentState.newGoalConditionType = cond;
       this.currentState.distanceCondition = cond;
-    } else if (experimentType === '2P2G') {
-      // Explicitly tag no_new_goal for 2P2G to keep both players consistent
+    } else if (experimentType === '2P2G' || GameConfigUtils.isStagHuntExperiment(experimentType)) {
+      // Explicitly tag no_new_goal for fixed-goal two-player hunt games
       const noNew = CONFIG?.twoP3G?.distanceConditions?.NO_NEW_GOAL || 'no_new_goal';
       this.trialData.newGoalConditionType = noNew;
       this.trialData.distanceCondition = noNew;
@@ -209,6 +246,11 @@ export class GameStateManager {
     // Update current state
     this.currentState.experimentType = experimentType;
     this.currentState.trialIndex = trialIndex;
+    this.currentState.moveMode = GameConfigUtils.getMoveMode(experimentType);
+    this.currentState.playerStartPositionsSwapped = !!design?.playerStartPositionsSwapped;
+    this.currentState.currentTurnPlayer = GameConfigUtils.isTurnTakingEnabled(experimentType)
+      ? (CONFIG?.game?.turnTaking?.startingPlayer === 2 ? 2 : 1)
+      : null;
 
     // Record initial spatial layout for exports/analysis
     try {
@@ -229,6 +271,100 @@ export class GameStateManager {
     } catch (_) {
       // Best effort only; export will fall back to null/empty if this fails
     }
+
+    // --- StagHunt 18-map metadata & Signaler/Non-Signaler role assignment ---
+    // Preserve rich map metadata on trialData so it flows into the Excel
+    // export automatically via the flattener in GameApplication.js.
+    try {
+      if (design && typeof design === 'object') {
+        this.trialData.mapId = design.map_id ?? null;
+        this.trialData.mapAscii = Array.isArray(design.ascii) ? design.ascii.slice() : (design.ascii ?? null);
+        this.trialData.signaling = design.signaling ? { ...design.signaling } : null;
+        this.trialData.distanceSummary = design.distance_summary ? { ...design.distance_summary } : null;
+        this.trialData.utilitySummary = design.utility_summary ? { ...design.utility_summary } : null;
+        this.trialData.stagPosition = Array.isArray(design.stag)
+          ? [...design.stag]
+          : (Array.isArray(design.bigGoals?.[0]) ? [...design.bigGoals[0]] : null);
+        this.trialData.rabbitPositions = Array.isArray(design.rabbits)
+          ? design.rabbits.map(r => [...r])
+          : (Array.isArray(design.smallGoals) ? design.smallGoals.map(r => [...r]) : null);
+        // Original (pre-swap) positions for Signaler/Non-Signaler start coords.
+        this.trialData.signalerStartPosition = Array.isArray(design.orange)
+          ? [...design.orange]
+          : null;
+        this.trialData.nonSignalerStartPosition = Array.isArray(design.red)
+          ? [...design.red]
+          : null;
+      }
+
+      // Role assignment (Signaler = orange, Non-Signaler = red).
+      // Without swap: player1 starts at red (Non-Signaler), player2 at orange (Signaler).
+      // With swap:    player1 starts at orange (Signaler),     player2 at red (Non-Signaler).
+      if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
+        const swapped = this.trialData.playerStartPositionsSwapped === true;
+        this.trialData.player1Role = swapped ? 'Signaler' : 'Non-Signaler';
+        this.trialData.player2Role = swapped ? 'Non-Signaler' : 'Signaler';
+      } else {
+        this.trialData.player1Role = null;
+        this.trialData.player2Role = null;
+      }
+    } catch (e) {
+      console.warn('⚠️ Failed to attach StagHunt metadata to trialData:', e?.message || e);
+    }
+  }
+
+  initializeScoreStateForTrial(experimentType) {
+    const rewardsCfg = CONFIG?.game?.rewards || {};
+    const initialPoints = Number.isFinite(rewardsCfg.initialPointsPerTrial)
+      ? rewardsCfg.initialPointsPerTrial
+      : 15;
+    const isTwoPlayer = GameConfigUtils.isTwoPlayerExperiment(experimentType);
+
+    this.currentState.player1CurrentPoints = initialPoints;
+    this.currentState.player2CurrentPoints = isTwoPlayer ? initialPoints : 0;
+    this.currentState.player1TotalPoints = Number(this.experimentData?.player1TotalPoints || 0);
+    this.currentState.player2TotalPoints = Number(this.experimentData?.player2TotalPoints || 0);
+
+    this.trialData.player1CurrentPoints = this.currentState.player1CurrentPoints;
+    this.trialData.player2CurrentPoints = this.currentState.player2CurrentPoints;
+    this.trialData.player1OutcomeBonus = 0;
+    this.trialData.player2OutcomeBonus = 0;
+    this.trialData.player1OutcomeApplied = false;
+    this.trialData.player2OutcomeApplied = false;
+    this.trialData.player1RoundPoints = this.currentState.player1CurrentPoints;
+    this.trialData.player2RoundPoints = this.currentState.player2CurrentPoints;
+    this.trialData.player1TotalPoints = this.currentState.player1TotalPoints;
+    this.trialData.player2TotalPoints = this.currentState.player2TotalPoints;
+    this.trialData.player1TotalCommitted = false;
+    this.trialData.player2TotalCommitted = false;
+  }
+
+  applyStepPenalty(playerIndex) {
+    if (!this.currentState) return;
+    const rewardsCfg = CONFIG?.game?.rewards || {};
+    const stepPenalty = this.getStepPenaltyForCurrentTrial(rewardsCfg);
+    const currentKey = playerIndex === 1 ? 'player1CurrentPoints' : 'player2CurrentPoints';
+    const nextPoints = Math.max(0, Number(this.currentState[currentKey] || 0) - stepPenalty);
+    this.currentState[currentKey] = nextPoints;
+    this.trialData[currentKey] = nextPoints;
+  }
+
+  // For StagHunt trials, prefer the per-map `utility_summary.step_cost_per_move`
+  // (stored as a negative number in the map file) over the global config default.
+  getStepPenaltyForCurrentTrial(rewardsCfg = CONFIG?.game?.rewards || {}) {
+    const globalPenalty = Number.isFinite(rewardsCfg.stepPenalty) ? rewardsCfg.stepPenalty : 1;
+    try {
+      const exp = String(this.currentState?.experimentType || this.trialData?.experimentType || '');
+      if (GameConfigUtils.isStagHuntExperiment(exp)) {
+        const perStep = this.currentMapDesign?.utility_summary?.step_cost_per_move;
+        if (Number.isFinite(perStep)) return Math.abs(perStep);
+      }
+    } catch (_) { /* fall through to default */ }
+    return globalPenalty;
+  }
+
+  getCurrentMapDesign() {
+    return this.currentMapDesign || null;
   }
 
   // Record a human→AI fallback event for the current run (and current trial if any)
@@ -247,14 +383,17 @@ export class GameStateManager {
           const p2 = CONFIG?.game?.players?.player2?.type;
           const t = (p1 !== 'human') ? p1 : ((p2 !== 'human') ? p2 : null);
 
-          if (t === 'gpt') {
+          if (t === 'gpt' || t === 'gpt-ToM') {
             const model = CONFIG?.game?.agent?.gpt?.model;
             if (model && String(model).trim().length > 0) {
               aiTypeDesc = String(model);
             } else {
-              console.warn('⚠️ GPT model not cached in CONFIG for fallback recording, using configured default');
-              aiTypeDesc = 'gpt-4o'; // matches the configured GPT_MODEL in .env
+              console.warn('⚠️ GPT model not cached in CONFIG for fallback recording, using agent label');
+              aiTypeDesc = t;
             }
+          } else if (t === 'vlm' || t === 'vlm-ToM') {
+            const vmodel = CONFIG?.game?.agent?.vlm?.model;
+            aiTypeDesc = (vmodel && String(vmodel).trim()) ? String(vmodel) : t;
           } else if (t === 'rl_joint') {
             aiTypeDesc = 'joint-rl';
           } else if (t === 'rl_individual') {
@@ -325,8 +464,8 @@ export class GameStateManager {
       return;
     }
 
-    // Initialize empty grid
-    const size = CONFIG.game.matrixSize;
+    // Initialize empty grid — use per-map gridSize if provided
+    const size = design.gridSize || CONFIG.game.matrixSize;
     this.currentState.gridMatrix = Array(size).fill(0).map(() => Array(size).fill(0));
 
     // Place player1
@@ -337,7 +476,7 @@ export class GameStateManager {
     }
 
     // Place player2 for 2P experiments
-    if (experimentType && experimentType.includes('2P') && design.initAIGrid && design.initAIGrid.length >= 2) {
+    if (experimentType && GameConfigUtils.isTwoPlayerExperiment(experimentType) && design.initAIGrid && design.initAIGrid.length >= 2) {
       const [row, col] = design.initAIGrid;
       this.currentState.gridMatrix[row][col] = GAME_OBJECTS.ai_player;
       this.currentState.player2 = [row, col];
@@ -347,21 +486,89 @@ export class GameStateManager {
 
     // Place goals
     this.currentState.currentGoals = [];
-    if (design.target1 && design.target1.length >= 2) {
-      const [row, col] = design.target1;
-      this.currentState.gridMatrix[row][col] = GAME_OBJECTS.goal;
+    this.currentState.currentGoalTypes = [];
+    // Reset claim tracker (parallel to currentGoals); exposed for renderer + agent
+    this.trialData.claimedSmallGoals = new Set();
+    this.currentState.claimedSmallGoals = this.trialData.claimedSmallGoals;
+
+    const addGoalAt = (row, col, type = 'small') => {
+      if (!Number.isInteger(row) || !Number.isInteger(col)) return;
+      if (row < 0 || row >= this.currentState.gridMatrix.length) return;
+      if (col < 0 || col >= this.currentState.gridMatrix[0].length) return;
+
+      // Avoid duplicates
+      if (this.currentState.currentGoals.some(g => g[0] === row && g[1] === col)) return;
+
+      const objectCode = (type === 'big') ? GAME_OBJECTS.goal_big : GAME_OBJECTS.goal_small;
+      this.currentState.gridMatrix[row][col] = objectCode;
       this.currentState.currentGoals.push([row, col]);
+      this.currentState.currentGoalTypes.push(type === 'big' ? 'big' : 'small');
+    };
+
+    // New-style dual-goal maps may provide explicit small/big goal lists
+    if (Array.isArray(design.smallGoals)) {
+      for (const pos of design.smallGoals) {
+        if (Array.isArray(pos) && pos.length >= 2) {
+          addGoalAt(pos[0], pos[1], 'small');
+        }
+      }
     }
 
-    if (design.target2 && design.target2.length >= 2) {
-      const [row, col] = design.target2;
-      this.currentState.gridMatrix[row][col] = GAME_OBJECTS.goal;
-      this.currentState.currentGoals.push([row, col]);
+    if (Array.isArray(design.bigGoals)) {
+      for (const pos of design.bigGoals) {
+        if (Array.isArray(pos) && pos.length >= 2) {
+          addGoalAt(pos[0], pos[1], 'big');
+        }
+      }
+    }
+
+    // Backwards-compatible fallback: use legacy target1/target2 fields
+    if (this.currentState.currentGoals.length === 0) {
+      if (design.target1 && design.target1.length >= 2) {
+        const [row, col] = design.target1;
+        addGoalAt(row, col, 'small');
+      }
+
+      if (design.target2 && design.target2.length >= 2) {
+        const [row, col] = design.target2;
+        addGoalAt(row, col, 'small');
+      }
+    }
+
+    // Place obstacles if provided
+    if (Array.isArray(design.obstacles)) {
+      try { console.log(`🧩 Design obstacles provided: ${design.obstacles.length}`); } catch (_) { /* noop */ }
+      for (const pos of design.obstacles) {
+        if (Array.isArray(pos) && pos.length >= 2) {
+          const r = pos[0];
+          const c = pos[1];
+          if (
+            Number.isInteger(r) && Number.isInteger(c) &&
+            r >= 0 && r < this.currentState.gridMatrix.length &&
+            c >= 0 && c < this.currentState.gridMatrix[0].length
+          ) {
+            // Do not overwrite players or goals
+            if (this.currentState.gridMatrix[r][c] === GAME_OBJECTS.blank) {
+              this.currentState.gridMatrix[r][c] = GAME_OBJECTS.obstacle;
+            }
+          }
+        }
+      }
+      try {
+        // Count obstacles applied
+        let count = 0;
+        for (let rr = 0; rr < this.currentState.gridMatrix.length; rr++) {
+          for (let cc = 0; cc < this.currentState.gridMatrix[rr].length; cc++) {
+            if (this.currentState.gridMatrix[rr][cc] === GAME_OBJECTS.obstacle) count++;
+          }
+        }
+        console.log(`🧱 Obstacles placed on grid: ${count}`);
+      } catch (_) { /* noop */ }
     }
   }
 
   // Safely add a new goal to the internal state and grid
-  addGoal(position) {
+  addGoal(position, type = 'small') {
     if (!position || position.length < 2) return;
     const [row, col] = position;
     if (!this.currentState || !this.currentState.gridMatrix) return;
@@ -373,9 +580,14 @@ export class GameStateManager {
       console.log(`🔧 [GOAL] Duplicate goal at [${row}, ${col}] not added`);
       return;
     }
-    console.log(`🎯 [GOAL] Adding goal at [${row}, ${col}]. Total goals: ${this.currentState.currentGoals.length + 1}`);
-    this.currentState.gridMatrix[row][col] = GAME_OBJECTS.goal;
+    console.log(`🎯 [GOAL] Adding goal at [${row}, ${col}] (type=${type}). Total goals: ${this.currentState.currentGoals.length + 1}`);
+    const objectCode = (type === 'big') ? GAME_OBJECTS.goal_big : GAME_OBJECTS.goal_small;
+    this.currentState.gridMatrix[row][col] = objectCode;
     this.currentState.currentGoals.push([row, col]);
+    if (!Array.isArray(this.currentState.currentGoalTypes)) {
+      this.currentState.currentGoalTypes = [];
+    }
+    this.currentState.currentGoalTypes.push(type === 'big' ? 'big' : 'small');
   }
 
   // Record trial metadata for a newly presented goal
@@ -429,6 +641,7 @@ export class GameStateManager {
       }
       const reactionTime = Date.now() - this.gameStartTime;
       this.recordPlayerMove(playerIndex, movement, reactionTime, currentPlayerIndex);
+      this.applyStepPenalty(playerIndex);
 
       // Calculate new position
       const realAction = GameHelpers.isValidMove(this.currentState.gridMatrix, player, movement);
@@ -486,6 +699,7 @@ export class GameStateManager {
       let next1 = p1;
       if (p1 && move1 && !GameHelpers.isGoalReached(p1, this.currentState.currentGoals)) {
         this.recordPlayerMove(1, move1, reactionTime);
+        this.applyStepPenalty(1);
         const real1 = GameHelpers.isValidMove(this.currentState.gridMatrix, p1, move1);
         next1 = GameHelpers.transition(p1, real1);
       }
@@ -493,6 +707,7 @@ export class GameStateManager {
       let next2 = p2;
       if (p2 && move2 && !GameHelpers.isGoalReached(p2, this.currentState.currentGoals)) {
         this.recordPlayerMove(2, move2, reactionTime);
+        this.applyStepPenalty(2);
         const real2 = GameHelpers.isValidMove(this.currentState.gridMatrix, p2, move2);
         next2 = GameHelpers.transition(p2, real2);
       }
@@ -550,6 +765,7 @@ export class GameStateManager {
       if (p1 && move1 && !GameHelpers.isGoalReached(p1, this.currentState.currentGoals)) {
         // Record as player1 move regardless of human/AI
         this.recordPlayerMove(1, move1, reactionTime);
+        this.applyStepPenalty(1);
         const real1 = GameHelpers.isValidMove(this.currentState.gridMatrix, p1, move1);
         next1 = GameHelpers.transition(p1, real1);
       }
@@ -557,6 +773,7 @@ export class GameStateManager {
       let next2 = p2;
       if (p2 && move2 && !GameHelpers.isGoalReached(p2, this.currentState.currentGoals)) {
         this.recordPlayerMove(2, move2, reactionTime);
+        this.applyStepPenalty(2);
         const real2 = GameHelpers.isValidMove(this.currentState.gridMatrix, p2, move2);
         next2 = GameHelpers.transition(p2, real2);
       }
@@ -594,6 +811,33 @@ export class GameStateManager {
     }
   }
 
+  getCurrentTurnPlayer() {
+    return this.currentState?.currentTurnPlayer || null;
+  }
+
+  setCurrentTurnPlayer(playerNumber) {
+    if (!this.currentState) return null;
+    const normalized = playerNumber === 2 ? 2 : 1;
+    this.currentState.currentTurnPlayer = normalized;
+    return normalized;
+  }
+
+  advanceTurnTakingPlayer() {
+    if (!this.currentState) return null;
+
+    const current = this.getCurrentTurnPlayer() || 1;
+    const next = current === 1 ? 2 : 1;
+    const p1AtGoal = GameHelpers.isGoalReached(this.currentState.player1, this.currentState.currentGoals);
+    const p2AtGoal = GameHelpers.isGoalReached(this.currentState.player2, this.currentState.currentGoals);
+
+    if (next === 1 && !p1AtGoal) return this.setCurrentTurnPlayer(1);
+    if (next === 2 && !p2AtGoal) return this.setCurrentTurnPlayer(2);
+    if (current === 1 && !p1AtGoal) return this.setCurrentTurnPlayer(1);
+    if (current === 2 && !p2AtGoal) return this.setCurrentTurnPlayer(2);
+
+    return this.setCurrentTurnPlayer(next);
+  }
+
   recordPlayerMove(playerIndex, action, reactionTime, currentPlayerIndex = null) {
     const player = playerIndex === 1 ? this.currentState.player1 : this.currentState.player2;
 
@@ -617,16 +861,23 @@ export class GameStateManager {
     }
   }
 
-  // Record the AI agent's inferred goal for the other player on this step (if using gpt-ToM)
+  // Record the AI agent's inferred goal for the other player on this step (ToM variants)
+  // Accepts either a goal index (number) or a coordinate [row, col]. Stores the goal INDEX.
   recordAIInferredOtherGoal(inferredGoal) {
     try {
       if (!Array.isArray(this.trialData.aiInferredOtherGoals)) {
         this.trialData.aiInferredOtherGoals = [];
       }
-      // Store as coordinate array or null per step alignment with AI actions
-      this.trialData.aiInferredOtherGoals.push(
-        (Array.isArray(inferredGoal) && inferredGoal.length >= 2) ? [inferredGoal[0], inferredGoal[1]] : null
-      );
+      let idx = null;
+      if (Number.isInteger(inferredGoal)) {
+        idx = inferredGoal;
+      } else if (Array.isArray(inferredGoal) && inferredGoal.length >= 2) {
+        // Convert coordinate to goal index using current goals
+        try {
+          idx = GameHelpers.whichGoalReached([inferredGoal[0], inferredGoal[1]], this.currentState.currentGoals);
+        } catch (_) { /* safe fallback to null */ }
+      }
+      this.trialData.aiInferredOtherGoals.push(idx);
     } catch (_) { /* noop */ }
   }
 
@@ -668,27 +919,54 @@ export class GameStateManager {
   }
 
     checkTrialCompletion() {
-    const player1AtGoal = GameHelpers.isGoalReached(this.currentState.player1, this.currentState.currentGoals);
-    const player2AtGoal = this.currentState.player2 ?
-      GameHelpers.isGoalReached(this.currentState.player2, this.currentState.currentGoals) : true;
+    const goalTypes = Array.isArray(this.currentState.currentGoalTypes)
+      ? this.currentState.currentGoalTypes : [];
+    const claimedSet = this.trialData.claimedSmallGoals instanceof Set
+      ? this.trialData.claimedSmallGoals
+      : (this.trialData.claimedSmallGoals = new Set());
+
+    // A goal is "available" to a player iff it is big, OR it is a small goal
+    // not yet claimed by the other player in a previous step. (Ties — same-step
+    // arrival — are allowed because claims are committed AFTER both reads.)
+    const getAvailableGoalIdx = (pos) => {
+      if (!pos) return null;
+      const idx = GameHelpers.whichGoalReached(pos, this.currentState.currentGoals);
+      if (idx === null || idx === undefined) return null;
+      const type = goalTypes[idx] || 'small';
+      if (type === 'big') return idx;
+      if (claimedSet.has(idx)) return null;
+      return idx;
+    };
+
+    const p1Idx = getAvailableGoalIdx(this.currentState.player1);
+    const p2Idx = this.currentState.player2 ? getAvailableGoalIdx(this.currentState.player2) : null;
+    const player1AtGoal = p1Idx !== null;
+    const player2AtGoal = this.currentState.player2 ? p2Idx !== null : true;
 
     // Record when players reach goals
     if (player1AtGoal && this.trialData.player1GoalReachedStep === -1) {
       this.trialData.player1GoalReachedStep = this.stepCount;
-      this.trialData.player1FinalReachedGoal = GameHelpers.whichGoalReached(
-        this.currentState.player1, this.currentState.currentGoals
-      );
+      this.trialData.player1FinalReachedGoal = p1Idx;
     }
 
     if (this.currentState.player2 && player2AtGoal && this.trialData.player2GoalReachedStep === -1) {
       this.trialData.player2GoalReachedStep = this.stepCount;
-      this.trialData.player2FinalReachedGoal = GameHelpers.whichGoalReached(
-        this.currentState.player2, this.currentState.currentGoals
-      );
+      this.trialData.player2FinalReachedGoal = p2Idx;
     }
 
+    // Commit claims for any small goals reached this tick (allows ties)
+    if (player1AtGoal && (goalTypes[p1Idx] || 'small') === 'small') claimedSet.add(p1Idx);
+    if (player2AtGoal && (goalTypes[p2Idx] || 'small') === 'small') claimedSet.add(p2Idx);
+
     // Check completion conditions based on experiment type
-    if (this.currentState.experimentType.startsWith('1P')) {
+    if (GameConfigUtils.isStagHuntExperiment(this.currentState.experimentType)) {
+      // Apply rewards and update totals as soon as a rabbit is caught or the
+      // stag is jointly caught, rather than waiting until trial finalization.
+      this.computeRewardsForTrial({ commitResolvedOnly: true });
+      const stagHuntOutcome = GameHelpers.evaluateStagHuntOutcome(this.currentState, this.trialData);
+      this.trialData.collaborationSucceeded = stagHuntOutcome.collaborationSucceeded;
+      return stagHuntOutcome.trialComplete || this.stepCount >= CONFIG.game.maxGameLength;
+    } else if (this.currentState.experimentType.startsWith('1P')) {
       // Single player experiments - just need player1 to reach any goal
       return player1AtGoal;
     } else {
@@ -699,7 +977,7 @@ export class GameStateManager {
         const p2Goal = this.trialData.player2FinalReachedGoal;
 
         // Collaboration succeeds when both players reach the same goal
-        this.trialData.collaborationSucceeded = (p1Goal === p2Goal && p1Goal !== null);
+        this.trialData.collaborationSucceeded = (p1Goal !== null && p2Goal !== null && p1Goal === p2Goal);
 
         // For 2P experiments, trial is complete when both players reach goals
         // but the success depends on whether they reached the same goal
@@ -718,11 +996,19 @@ export class GameStateManager {
       return;
     }
 
-    // Ensure collaborationSucceeded is explicitly boolean for 2P experiments
+    // Recompute collaboration success deterministically at finalization for 2P experiments
     try {
-      const is2P = this.currentState && typeof this.currentState.experimentType === 'string' && this.currentState.experimentType.includes('2P');
-      if (is2P && typeof this.trialData.collaborationSucceeded !== 'boolean') {
-        this.trialData.collaborationSucceeded = false;
+      const is2P = this.currentState && typeof this.currentState.experimentType === 'string' && GameConfigUtils.isTwoPlayerExperiment(this.currentState.experimentType);
+      if (is2P) {
+        if (GameConfigUtils.isStagHuntExperiment(this.currentState.experimentType)) {
+          const stagHuntOutcome = GameHelpers.evaluateStagHuntOutcome(this.currentState, this.trialData);
+          this.trialData.collaborationSucceeded = stagHuntOutcome.collaborationSucceeded;
+        } else {
+          const p1 = this.trialData.player1FinalReachedGoal;
+          const p2 = this.trialData.player2FinalReachedGoal;
+          const bothValid = Number.isInteger(p1) && p1 >= 0 && Number.isInteger(p2) && p2 >= 0;
+          this.trialData.collaborationSucceeded = !!(bothValid && p1 === p2);
+        }
       }
     } catch (_) { /* noop */ }
 
@@ -732,7 +1018,7 @@ export class GameStateManager {
 
     // Normalize partnerAgentType just before saving to ensure it reflects current AI model/mode
     try {
-      const is2P = this.currentState && String(this.currentState.experimentType || '').includes('2P');
+      const is2P = this.currentState && GameConfigUtils.isTwoPlayerExperiment(this.currentState.experimentType);
       if (is2P) {
         const recorded = String(this.trialData.partnerAgentType || '').trim();
         const computed = this.getPartnerAgentType(this.currentState.experimentType);
@@ -762,17 +1048,132 @@ export class GameStateManager {
       }
     } catch (_) { /* noop */ }
 
+    // Compute reward based on final goals and goal types BEFORE normalizing missing values
+    try {
+      this.computeRewardsForTrial();
+    } catch (_) { /* best-effort only */ }
+
     // Fix missing goal values before saving
     this.fixMissingGoalValues();
 
-    // Add to experiment data
-    this.experimentData.allTrialsData.push({ ...this.trialData });
+    // Add to experiment data (use deep clone to avoid shared array references across trials)
+    const snapshot = JSON.parse(JSON.stringify(this.trialData));
+    this.experimentData.allTrialsData.push(snapshot);
 
     // Mark as finalized to prevent duplicates
     this.trialData._finalized = true;
 
     // Update success threshold tracking
     this.updateSuccessThreshold(success);
+  }
+
+  computeRewardsForTrial({ commitResolvedOnly = false } = {}) {
+    const rewardsCfg = (CONFIG?.game?.rewards) || {};
+    let smallReward = Number.isFinite(rewardsCfg.smallGoalReward) ? rewardsCfg.smallGoalReward : 3;
+    let bigJointReward = Number.isFinite(rewardsCfg.bigGoalJointReward) ? rewardsCfg.bigGoalJointReward : 10;
+
+    const types = Array.isArray(this.currentState?.currentGoalTypes)
+      ? this.currentState.currentGoalTypes
+      : [];
+
+    const experimentType = String(this.currentState?.experimentType || '');
+    const isTwoPlayer = GameConfigUtils.isTwoPlayerExperiment(experimentType);
+
+    // For StagHunt: source rewards from the active map's utility_summary so
+    // scoreboard values match the per-map economics advertised in the design.
+    if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
+      const util = this.currentMapDesign?.utility_summary || {};
+      if (Number.isFinite(util.hare_reward_each)) smallReward = util.hare_reward_each;
+      if (Number.isFinite(util.stag_reward_each)) bigJointReward = util.stag_reward_each;
+    }
+
+    let p1Reward = 0;
+    let p2Reward = 0;
+
+    const p1Idx = this.trialData.player1FinalReachedGoal;
+    const p2Idx = this.trialData.player2FinalReachedGoal;
+
+    const valid1 = Number.isInteger(p1Idx) && p1Idx >= 0 && p1Idx < types.length;
+    const valid2 = Number.isInteger(p2Idx) && p2Idx >= 0 && p2Idx < types.length;
+
+    const type1 = valid1 ? (types[p1Idx] || 'small') : null;
+    const type2 = valid2 ? (types[p2Idx] || 'small') : null;
+
+    if (isTwoPlayer) {
+      const bothSameBig =
+        valid1 && valid2 &&
+        p1Idx === p2Idx &&
+        type1 === 'big' && type2 === 'big';
+
+      if (bothSameBig) {
+        // Joint collection of a big goal: reward for both players
+        p1Reward = bigJointReward;
+        p2Reward = bigJointReward;
+      } else {
+        // Solo collection: only small goals pay out; big goals require both players
+        if (valid1 && type1 === 'small') p1Reward = smallReward;
+        if (valid2 && type2 === 'small') p2Reward = smallReward;
+      }
+    } else {
+      // 1P experiments: any reached goal gives the small-goal reward
+      if (valid1) p1Reward = smallReward;
+    }
+
+    const baseP1 = Number(this.trialData.player1CurrentPoints ?? this.currentState?.player1CurrentPoints ?? 0);
+    const baseP2 = Number(this.trialData.player2CurrentPoints ?? this.currentState?.player2CurrentPoints ?? 0);
+
+    const p1Resolved = commitResolvedOnly
+      ? (valid1 && (type1 === 'small' || (valid2 && p1Idx === p2Idx && type1 === 'big' && type2 === 'big')))
+      : true;
+    const p2Resolved = commitResolvedOnly
+      ? (valid2 && (type2 === 'small' || (valid1 && p1Idx === p2Idx && type1 === 'big' && type2 === 'big')))
+      : true;
+
+    const p1RewardToApply = (p1Resolved && p1Reward > 0 && !this.trialData.player1OutcomeApplied) ? p1Reward : 0;
+    const p2RewardToApply = (p2Resolved && p2Reward > 0 && !this.trialData.player2OutcomeApplied) ? p2Reward : 0;
+
+    const p1RoundPoints = baseP1 + p1RewardToApply;
+    const p2RoundPoints = baseP2 + p2RewardToApply;
+
+    if (p1RewardToApply > 0) {
+      this.trialData.player1OutcomeApplied = true;
+      this.trialData.player1OutcomeBonus = Number(this.trialData.player1OutcomeBonus || 0) + p1RewardToApply;
+    }
+    if (p2RewardToApply > 0) {
+      this.trialData.player2OutcomeApplied = true;
+      this.trialData.player2OutcomeBonus = Number(this.trialData.player2OutcomeBonus || 0) + p2RewardToApply;
+    }
+
+    this.trialData.player1Reward = Number(this.trialData.player1OutcomeBonus || 0);
+    this.trialData.player2Reward = Number(this.trialData.player2OutcomeBonus || 0);
+    this.trialData.totalReward = this.trialData.player1Reward + this.trialData.player2Reward;
+    this.trialData.player1RoundPoints = p1RoundPoints;
+    this.trialData.player2RoundPoints = p2RoundPoints;
+
+    this.currentState.player1CurrentPoints = p1RoundPoints;
+    this.currentState.player2CurrentPoints = isTwoPlayer ? p2RoundPoints : 0;
+
+    if (this.experimentData) {
+      const shouldCommitP1 = commitResolvedOnly ? p1Resolved : true;
+      const shouldCommitP2 = isTwoPlayer && (commitResolvedOnly ? p2Resolved : true);
+
+      if (shouldCommitP1 && !this.trialData.player1TotalCommitted) {
+        this.experimentData.player1TotalPoints = Number(this.experimentData.player1TotalPoints || 0) + p1RoundPoints;
+        this.trialData.player1TotalCommitted = true;
+      }
+      if (shouldCommitP2 && !this.trialData.player2TotalCommitted) {
+        this.experimentData.player2TotalPoints = Number(this.experimentData.player2TotalPoints || 0) + p2RoundPoints;
+        this.trialData.player2TotalCommitted = true;
+      }
+      this.experimentData.totalScore = this.experimentData.player1TotalPoints + this.experimentData.player2TotalPoints;
+    }
+
+    this.currentState.player1TotalPoints = Number(this.experimentData?.player1TotalPoints || 0);
+    this.currentState.player2TotalPoints = Number(this.experimentData?.player2TotalPoints || 0);
+    this.trialData.player1CurrentPoints = this.currentState.player1CurrentPoints;
+    this.trialData.player2CurrentPoints = this.currentState.player2CurrentPoints;
+    this.trialData.player1TotalPoints = this.currentState.player1TotalPoints;
+    this.trialData.player2TotalPoints = this.currentState.player2TotalPoints;
   }
 
   fixMissingGoalValues() {
@@ -782,7 +1183,7 @@ export class GameStateManager {
     if (experimentType.startsWith('1P')) {
       // Set player2FinalReachedGoal to -1 (not applicable)
       this.trialData.player2FinalReachedGoal = -1;
-    } else if (experimentType.startsWith('2P')) {
+    } else if (GameConfigUtils.isTwoPlayerExperiment(experimentType)) {
       // For 2-player experiments, if a player didn't reach any goal, set to -1
       if (this.trialData.player1GoalReachedStep === -1 && this.trialData.player1FinalReachedGoal === null) {
         this.trialData.player1FinalReachedGoal = -1;
@@ -805,13 +1206,28 @@ export class GameStateManager {
       case 'gpt':
         // Try to get specific GPT model
         const model = CONFIG?.game?.agent?.gpt?.model;
-        return (model && String(model).trim()) ? String(model) : 'gpt-4o';
+        return (model && String(model).trim()) ? String(model) : 'gpt';
+      case 'gpt-tom':
+      case 'gpttom':
+        // Map ToM label to underlying GPT API model
+        const modelTom = CONFIG?.game?.agent?.gpt?.model;
+        return (modelTom && String(modelTom).trim()) ? String(modelTom) : 'gpt-ToM';
+      case 'vlm':
+        // Try to get specific VLM model
+        const vmodel = CONFIG?.game?.agent?.vlm?.model;
+        return (vmodel && String(vmodel).trim()) ? String(vmodel) : 'vlm';
+      case 'vlm-tom':
+      case 'vlmtom':
+        const vmodelTom = CONFIG?.game?.agent?.vlm?.model;
+        return (vmodelTom && String(vmodelTom).trim()) ? String(vmodelTom) : 'vlm-ToM';
       case 'rl_joint':
       case 'joint':
         return 'joint-rl';
       case 'rl_individual':
       case 'individual':
         return 'individual-rl';
+      case 'rl_individual_python':
+        return 'individual-rl-python';
       case 'ai':
         // Default AI type based on config
         return (CONFIG?.game?.agent?.type === 'individual') ? 'individual-rl' : 'joint-rl';
@@ -824,11 +1240,11 @@ export class GameStateManager {
         if (defaultFallback === 'rl_individual') return 'individual-rl';
         if (defaultFallback === 'gpt') {
           const model = CONFIG?.game?.agent?.gpt?.model;
-          return (model && String(model).trim()) ? String(model) : 'gpt-4o';
+          return (model && String(model).trim()) ? String(model) : 'gpt';
         }
         return 'joint-rl'; // ultimate fallback
       default:
-        // Return as-is for specific models (e.g., 'gpt-4o-mini')
+        // Return as-is for specific runtime model names once cached from the server.
         return aiType;
     }
   }
@@ -857,27 +1273,32 @@ export class GameStateManager {
   getPartnerAgentType(experimentType) {
     // Determine partner agent description for recording/export
     try {
-      if (!String(experimentType || '').includes('2P')) return 'none';
+      if (!GameConfigUtils.isTwoPlayerExperiment(experimentType)) return 'none';
       const p1 = CONFIG?.game?.players?.player1?.type;
       const p2 = CONFIG?.game?.players?.player2?.type;
       // Prefer whichever side is non-human as the partner agent type
       const t = (p1 !== 'human') ? p1 : ((p2 !== 'human') ? p2 : 'human');
       if (t === 'human') return 'human';
-      if (t === 'gpt') {
+      if (t === 'gpt' || t === 'gpt-ToM') {
         // Prefer exact GPT model name if available
         const model = CONFIG?.game?.agent?.gpt?.model;
         if (model && String(model).trim().length > 0) {
           return String(model);
         } else {
-          // If model not cached, try to fetch it synchronously as fallback
-          console.warn('⚠️ GPT model not cached in CONFIG, using fallback logic');
-          // For now, return a more specific default that matches the configured model
-          // This should be rarely hit if logCurrentAIModel() is properly awaited
-          return 'gpt-4o'; // matches the configured GPT_MODEL in .env
+          console.warn('⚠️ GPT model not cached in CONFIG, falling back to agent label');
+          return t;
         }
+      }
+      if (t === 'vlm' || t === 'vlm-ToM') {
+        const model = CONFIG?.game?.agent?.vlm?.model;
+        if (model && String(model).trim().length > 0) {
+          return String(model);
+        }
+        return t;
       }
       if (t === 'rl_joint') return 'joint-rl';
       if (t === 'rl_individual') return 'individual-rl';
+      if (t === 'rl_individual_python') return 'individual-rl-python';
       if (t === 'ai') return (CONFIG?.game?.agent?.type === 'individual') ? 'individual-rl' : 'joint-rl'; // legacy safety
       return String(t || 'unknown');
     } catch (_) {
@@ -926,7 +1347,7 @@ export class GameStateManager {
   getRandomDistanceConditionFor2P3G(trialIndex) {
     // Use or create a balanced sequence for the experiment
     const key = '2P3G';
-    const numTrials = GameConfigUtils.getNumTrials(key);
+    const numTrials = (CONFIG.game.experiments?.numTrials?.[key]) || 12;
     if (!this.conditionSequences[key]) {
       // If human-human mode, use a shared seed so both clients get identical sequences
       const isHumanHuman = (CONFIG?.game?.players?.player2?.type === 'human');
@@ -944,7 +1365,7 @@ export class GameStateManager {
 
   getRandomDistanceConditionFor1P2G(trialIndex) {
     const key = '1P2G';
-    const numTrials = GameConfigUtils.getNumTrials(key);
+    const numTrials = (CONFIG.game.experiments?.numTrials?.[key]) || 12;
     if (!this.conditionSequences[key]) {
       this.conditionSequences[key] = this.generateBalancedConditionSequence(
         Object.values(CONFIG.oneP2G.distanceConditions),
