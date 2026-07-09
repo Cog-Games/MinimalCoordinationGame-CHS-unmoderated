@@ -271,8 +271,14 @@ export class TimelineManager {
    */
   start() {
     this.createTimelineStages();
-    this.currentStageIndex = this.shouldSkipDobInput() ? 1 : 0;
-    if (this.currentStageIndex === 1) {
+    if (this.shouldStartDirectlyAtGame()) {
+      const firstTrialStageIndex = this.stages.findIndex(stage => stage.type === 'trial');
+      this.currentStageIndex = firstTrialStageIndex >= 0 ? firstTrialStageIndex : 0;
+      console.log(`🧪 Direct game mode enabled; starting at stage ${this.currentStageIndex}`);
+    } else {
+      this.currentStageIndex = this.shouldSkipDobInput() ? 1 : 0;
+    }
+    if (!this.shouldStartDirectlyAtGame() && this.currentStageIndex === 1) {
       console.log('🧪 DOB input skipped by test URL parameter');
     }
     this.runCurrentStage();
@@ -2326,6 +2332,15 @@ export class TimelineManager {
       'skipDOB',
       'skipDateOfBirth',
       'skip_dob'
+    ]);
+  }
+
+  shouldStartDirectlyAtGame() {
+    return this.getBooleanUrlParam([
+      'directGame',
+      'gameOnly',
+      'skipInstructions',
+      'startWithGame'
     ]);
   }
 

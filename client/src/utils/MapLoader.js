@@ -1,6 +1,7 @@
 // Map loading and randomization utility based on legacy version
 import { CONFIG } from '../config/gameConfig.js';
 import { MapParser } from './MapParser.js';
+import { StagHuntMaps } from '../data/StagHuntMaps.js';
 import { StagHuntTwoStagsMaps } from '../data/StagHuntTwoStagsMaps.js';
 
 export class MapLoader {
@@ -246,20 +247,7 @@ export class MapLoader {
   }
 
   generateStagHuntMaps() {
-    const maps = {};
-    // Simple fallback stag hunt map
-    for (let i = 0; i < 10; i++) {
-      maps[String(i)] = [{
-        initPlayerGrid: [8, 0],
-        initAIGrid: [0, 4],
-        bigGoals: [[4, 8]],
-        smallGoals: [[5, 4], [7, 1]],
-        obstacles: [],
-        gridSize: 9,
-        mapType: 'StagHunt'
-      }];
-    }
-    return maps;
+    return this.processMapData(JSON.parse(JSON.stringify(StagHuntMaps)));
   }
 
   generateStagHuntTwoStagsMaps() {

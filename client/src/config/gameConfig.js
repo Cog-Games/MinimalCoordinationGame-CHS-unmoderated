@@ -76,7 +76,7 @@ export const CONFIG = {
     name: 'GridWorldExperiment_StagHunt',
     version: '2.0.0',
     prolificCompletionCode: getEnvVar('VITE_PROLIFIC_COMPLETION_CODE', 'CTNDR8GV'),
-    matrixSize: 15,
+    matrixSize: 9,
     maxGameLength: 60,
     /** 'joint' | 'individual' — retained for the original MinimalCoordination RL study arm. */
     studyRLCondition: participantRLCondition,
@@ -97,10 +97,9 @@ export const CONFIG = {
       },
       player2: {
         // Types: 'human' | 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_individual' | 'rl_joint' | 'we_intent_js'
-        // Legacy alias 'ai' is treated as 'rl_joint'. Stag Hunt defaults to the SA bot.
-        type: 'we_intent_js',
-        color: 'purple',
-        description: 'Human, GPT, RL, or SA-model partner'
+        type: 'vlm',
+        color: 'orange',
+        description: 'Human, GPT, or RL partner'
       }
     },
 
@@ -110,10 +109,10 @@ export const CONFIG = {
       order: ['StagHunt'],
 
       numTrials: {
-        '1P1G': 2,
-        '1P2G': 8,
-        '2P2G': 4,
-        '2P3G': 8,
+        '1P1G': 3,
+        '1P2G': 12,
+        '2P2G': 8,
+        '2P3G': 12,
         'StagHunt': 18,
         'StagHuntTwoStags': 4
       },
@@ -157,7 +156,7 @@ export const CONFIG = {
     // Timing configurations
   timing: {
       trialToFeedbackDelay: 500,
-      feedbackDisplayDuration: 1000,
+      feedbackDisplayDuration: 2500,
       preTrialDisplayDuration: 2000,
       fixationDuration: 1000,
       newGoalMessageDuration: 0,
@@ -165,14 +164,14 @@ export const CONFIG = {
       // Legacy behavior had no time cap; only step-based via maxGameLength.
       maxTrialDurationMs: 60 * 1000,
       // Minimum and maximum time to wait for partner (ms)
-      waitingForPartnerMinDuration: 9 * 1000, // 9*1000, 9s
-      waitingForPartnerMaxDuration: 9 * 1000 // 300*1000, 5mins
+      waitingForPartnerMinDuration: 1 * 1000, // 9*1000, 9s
+      waitingForPartnerMaxDuration: 1 * 1000 // 300*1000, 5mins
     },
 
     // AI agent settings
     agent: {
       // RL mode for player2 when using RL: 'individual' or 'joint'
-      type: assignedAgentMode,
+      type: 'joint',
       delay: 500,
       independentDelay: 300,
       // When true, AI/GPT/SA moves are synchronized with human input.
@@ -212,14 +211,14 @@ export const CONFIG = {
 
   // Visual settings
   visual: {
-    canvasSize: 632, // (cellSize + padding) * matrixSize + padding = (40 + 2) * 15 + 2 = 632
+    canvasSize: 380, // (cellSize + padding) * matrixSize + padding = (40 + 2) * 9 + 2 = 380
     cellSize: 40,
     padding: 2,
     colors: {
       background: '#ffffff',
       grid: '#cccccc',
       player1: '#ff0000',
-      player2: '#8000ff',
+      player2: '#ff8800',
       goal: '#0066ff',
       obstacle: '#333333'
     }
@@ -302,7 +301,7 @@ export const CONFIG = {
     matchPlayReadyTimeout: 10000,
     // Fallback AI partner type when human-human matching fails
     // Allowed: 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_individual' | 'rl_joint' | 'we_intent_js'
-    fallbackAIType: 'we_intent_js',
+    fallbackAIType: 'vlm-ToM',
     // Partner inactivity settings
     inactivityFallback: {
       // Enable automatic fallback to AI when partner is inactive
@@ -442,6 +441,16 @@ export const GameConfigUtils = {
 
     if (Number.isInteger(explicitTrials) && explicitTrials > 0) {
       return explicitTrials;
+    }
+
+    const directGameMode = this.getBooleanUrlParam([
+      'directGame',
+      'gameOnly',
+      'skipInstructions',
+      'startWithGame'
+    ]);
+    if (directGameMode) {
+      return null;
     }
 
     const shortTestMode = this.getBooleanUrlParam([
