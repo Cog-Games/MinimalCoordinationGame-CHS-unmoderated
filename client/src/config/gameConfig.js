@@ -47,6 +47,18 @@ const participantRLCondition = resolveParticipantRLCondition();
 const assignedRLPartnerType = participantRLCondition === 'joint' ? 'rl_joint' : 'rl_individual';
 const assignedAgentMode = participantRLCondition === 'joint' ? 'joint' : 'individual';
 
+const urlStudyMode = (() => {
+  try {
+    return typeof window !== 'undefined'
+      ? String(new URLSearchParams(window.location.search).get('studyMode') || '').toLowerCase()
+      : '';
+  } catch (_) {
+    return '';
+  }
+})();
+const selfHostedStudyEnabled = urlStudyMode === 'self-paced' ||
+  getEnvVar('VITE_SELF_HOSTED_STUDY_ENABLED', 'false') === 'true';
+
 export const CONFIG = {
   // Debug / logging configuration
   debug: {
@@ -69,6 +81,19 @@ export const CONFIG = {
       'https://script.google.com/macros/s/AKfycbyfQ-XKsoFbmQZGM7c741rEXh2ZUpVK-uUIu9ycooXKnaxM5-hRSzIUhQ-uWZ668Qql/exec'
     ),
     enableGoogleDriveSave: getEnvVar('VITE_ENABLE_GOOGLE_DRIVE_SAVE', 'true') === 'true'
+  },
+
+  study: {
+    enabled: selfHostedStudyEnabled,
+    mode: selfHostedStudyEnabled ? 'self-paced' : 'legacy',
+    apiBaseUrl: getEnvVar('VITE_STUDY_API_BASE_URL', '/api/study'),
+    permissionVersion: getEnvVar('VITE_STUDY_PERMISSION_VERSION', 'test-v1'),
+    assentVersion: getEnvVar('VITE_STUDY_ASSENT_VERSION', 'test-v1'),
+    recording: {
+      segmentDurationMs: Number(getEnvVar('VITE_STUDY_VIDEO_SEGMENT_MS', '30000')) || 30000,
+      videoBitsPerSecond: Number(getEnvVar('VITE_STUDY_VIDEO_BITRATE', '900000')) || 900000,
+      audio: getEnvVar('VITE_STUDY_RECORD_AUDIO', 'true') === 'true'
+    }
   },
 
   // Game settings (from original NODEGAME_CONFIG)

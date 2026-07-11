@@ -1249,6 +1249,12 @@ export class ExperimentManager {
     // Finalize trial data
     this.gameStateManager.finalizeTrial(success);
 
+    try {
+      window.__GAME_APPLICATION__?.handleTrialFinalized?.(this.gameStateManager.getCurrentTrialData());
+    } catch (error) {
+      console.warn('Could not save finalized trial checkpoint:', error);
+    }
+
     // Get trial data for timeline
     const trialData = {
       ...result,

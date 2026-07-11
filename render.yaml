@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: gridworld-self-hosted-study
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_SELF_HOSTED_STUDY_ENABLED
+        value: "true"
+      - key: VITE_BASE_PATH
+        value: /
+      - key: VITE_STUDY_API_BASE_URL
+        value: /api/study
+      - key: STUDY_STORAGE_MODE
+        value: google-drive
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gridworld-study-db
+          property: connectionString
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REFRESH_TOKEN
+        sync: false
+      - key: STUDY_ADMIN_API_KEY
+        generateValue: true
+      - key: PUBLIC_STUDY_URL
+        sync: false
+      - key: STUDY_ENABLE_DIRECT_DELETION_LINKS
+        value: "false"
+      - key: STUDY_WITHDRAWAL_LINK_DAYS
+        value: "30"
+      - key: STUDY_WITHDRAWAL_LINK_COOLDOWN_SECONDS
+        value: "60"
+      - key: STUDY_EMAIL_TEST_MODE
+        value: "false"
+      - key: STUDY_EMAIL_FROM
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+
+databases:
+  - name: gridworld-study-db
+    plan: basic-256mb

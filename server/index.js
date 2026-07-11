@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -8,6 +9,9 @@ import fs from 'fs';
 import { GameRoomManager } from './gameRoomManager.js';
 import { GameEventHandler } from './gameEventHandler.js';
 import { decideGptAction, decideGptTomAction, getGptConfigInfo } from './ai/gptAgent.js';
+import { StudySessionStore } from './study/sessionStore.js';
+import { createStudyStorage } from './study/storage.js';
+import { createStudyRouter } from './study/router.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,15 +47,38 @@ loadEnvFromDotFile();
 
 const app = express();
 const server = createServer(app);
+const configuredOrigins = String(process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(value => value.trim())
+  .filter(Boolean);
+const developmentOrigins = ['http://localhost:3000', 'http://localhost:3001'];
+const allowedOrigins = new Set([...configuredOrigins, ...developmentOrigins]);
+const corsOrigin = (origin, callback) => {
+  if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+  callback(new Error('Origin is not allowed by CORS policy.'));
+};
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: corsOrigin,
     methods: ['GET', 'POST']
   }
 });
 
-app.use(cors());
-app.use(express.json());
+app.disable('x-powered-by');
+app.use(cors({ origin: corsOrigin, credentials: true }));
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  next();
+});
+app.use(express.json({ limit: '10mb' }));
+
+const studyStore = new StudySessionStore();
+await studyStore.init();
+const studyStorage = await createStudyStorage();
+app.use('/api/study', createStudyRouter({ store: studyStore, storage: studyStorage }));
 
 // Initialize game managers
 const roomManager = new GameRoomManager();
@@ -274,6 +301,15 @@ app.get('*', (req, res, next) => {
   } else {
     res.status(404).send('Client not found');
   }
+});
+
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  const isTooLarge = error?.type === 'entity.too.large';
+  console.error('[server] Request failed:', error?.message || error);
+  res.status(isTooLarge ? 413 : 500).json({
+    error: isTooLarge ? 'Upload exceeds the configured segment size.' : 'Request failed.'
+  });
 });
 
 const PORT = process.env.PORT || 3001;

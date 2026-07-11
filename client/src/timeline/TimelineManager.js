@@ -147,7 +147,9 @@ export class TimelineManager {
 
       // Waiting room only for true human-human multiplayer experiments
       // For human-AI mode, 2P experiments run with AI as the second player
-      const isMultiplayer = experimentType.includes('2P');
+      const isMultiplayer = experimentType.includes('2P') &&
+        !CONFIG?.study?.enabled &&
+        CONFIG?.game?.players?.player2?.type === 'human';
       console.log(`🔍 Experiment ${experimentType}: isMultiplayer=${isMultiplayer}`);
 
       if (isMultiplayer) {
@@ -1927,6 +1929,7 @@ export class TimelineManager {
     const notifyLookitDone = () => {
       if (this._lookitDonePosted) return;
       this._lookitDonePosted = true;
+      if (CONFIG?.study?.enabled) return;
       try {
         window.parent.postMessage({ type: 'exp-lookit:next' }, '*');
       } catch (err) {
@@ -1952,9 +1955,40 @@ export class TimelineManager {
           <div style="margin-bottom: 8px;">
             <div id="saving-status" style="display: inline-block; margin: 10px; color: #555; font-size: 16px; line-height: 1.5;">Saving your data...</div>
           </div>
+          ${CONFIG?.study?.enabled ? `
+            <style>
+              @keyframes studyProgressPulse { 0% { background-position: 0 0; } 100% { background-position: 32px 0; } }
+            </style>
+            <div id="studySaveProgress" role="progressbar" aria-label="Study data upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="width:100%;height:18px;background:#e2e8f0;border-radius:999px;overflow:hidden;text-align:left;">
+              <div id="studySaveProgressBar" style="width:0%;height:100%;border-radius:999px;background-color:#1769aa;background-image:linear-gradient(135deg,rgba(255,255,255,.22) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.22) 50%,rgba(255,255,255,.22) 75%,transparent 75%,transparent);background-size:32px 32px;animation:studyProgressPulse .8s linear infinite;transition:width .4s ease;"></div>
+            </div>
+            <div id="studySaveProgressLabel" aria-live="polite" style="margin-top:10px;min-height:22px;color:#475569;font-size:15px;">Preparing upload…</div>
+          ` : ''}
         </div>
       </div>
     `;
+
+    // Install the listener before emitting save-data so fast same-origin saves
+    // cannot finish before the completion screen starts listening.
+    const handleSaved = () => {
+      if (CONFIG?.study?.enabled) {
+        window.__SELF_HOSTED_STUDY__?.setSaveProgress?.(100, 'Upload complete.');
+      }
+      const el = document.getElementById('saving-status');
+      if (el) {
+        el.innerHTML = CONFIG?.study?.enabled
+          ? 'Data and recordings saved successfully. You may close this page.'
+          : 'Data saved successfully. Please click <strong style="color: #28a745;">Next</strong> at the bottom right of the screen.';
+        el.style.color = '#333';
+      }
+      this.off('data-save-success', handleSaved);
+      notifyLookitDone();
+      if (CONFIG?.study?.enabled) {
+        window.__SELF_HOSTED_STUDY__?.showParentRecordingReview?.();
+      }
+    };
+    this.eventHandlers.delete('data-save-success');
+    this.on('data-save-success', handleSaved);
 
     // Save data (emit event for external handler)
     this.experimentData.completed = true;
@@ -1973,7 +2007,7 @@ export class TimelineManager {
 
     // Safety: If save takes too long or fails silently, still direct participants to the platform Next button.
     try {
-      if (CONFIG?.server?.enableGoogleDriveSave) {
+      if (CONFIG?.server?.enableGoogleDriveSave && !CONFIG?.study?.enabled) {
         setTimeout(() => {
           const el = document.getElementById('saving-status');
           if (el && !this._lookitDonePosted) {
@@ -1985,19 +2019,6 @@ export class TimelineManager {
       }
     } catch (_) { /* noop */ }
 
-    // Update UI when data save succeeds.
-    const handleSaved = () => {
-      const el = document.getElementById('saving-status');
-      if (el) {
-        el.innerHTML = 'Data saved successfully. Please click <strong style="color: #28a745;">Next</strong> at the bottom right of the screen.';
-        el.style.color = '#333';
-      }
-      this.off('data-save-success', handleSaved);
-      notifyLookitDone();
-    };
-    // Ensure single listener
-    this.eventHandlers.delete('data-save-success');
-    this.on('data-save-success', handleSaved);
   }
 
   showProlificRedirectStage() {
@@ -2294,6 +2315,7 @@ export class TimelineManager {
   }
 
   shouldSkipDobInput() {
+    if (CONFIG?.study?.enabled) return true;
     return this.getBooleanUrlParam([
       'skipDob',
       'skipDOB',
@@ -2323,6 +2345,8 @@ export class TimelineManager {
   }
 
   getParticipantId() {
+    const selfHostedSessionId = window?.__SELF_HOSTED_STUDY__?.session?.id;
+    if (selfHostedSessionId) return selfHostedSessionId;
     const explicitParticipantId = this.getUrlParam([
       'PROLIFIC_PID',
       'prolific_pid',

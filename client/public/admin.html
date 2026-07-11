@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study session review</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, Arial, sans-serif; color: #172033; background: #f3f6fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 28px; }
+    main { max-width: 1100px; margin: auto; }
+    header, section { background: white; border: 1px solid #dbe3ee; border-radius: 12px; padding: 22px; margin-bottom: 18px; box-shadow: 0 5px 20px rgba(26,45,75,.06); }
+    h1, h2 { margin-top: 0; }
+    .controls { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+    input, select, textarea, button { font: inherit; padding: 10px; border: 1px solid #aebbc9; border-radius: 7px; }
+    button { background: #1769aa; color: white; border: 0; cursor: pointer; }
+    button.secondary { background: #5a6574; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
+    th { color: #526071; font-size: 13px; text-transform: uppercase; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #f6f9fc; }
+    .status { display: inline-block; border-radius: 999px; padding: 4px 8px; background: #e5edf7; font-size: 12px; }
+    .artifact { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; padding: 9px 0; border-bottom: 1px solid #edf1f5; }
+    .review { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-top: 18px; }
+    .review textarea { grid-column: 1 / -1; min-height: 80px; }
+    .review button { grid-column: 1 / -1; }
+    #message { min-height: 22px; margin-top: 10px; color: #9f1239; }
+    [hidden] { display: none !important; }
+    @media (max-width: 720px) { body { padding: 12px; } .artifact, .review { grid-template-columns: 1fr; } .review textarea, .review button { grid-column: auto; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Study session review</h1>
+      <p>Enter the server-side <code>STUDY_ADMIN_API_KEY</code>. The key stays in this browser tab and is sent only to this site’s API.</p>
+      <div class="controls">
+        <input id="adminKey" type="password" autocomplete="off" placeholder="Admin API key" aria-label="Admin API key">
+        <button id="loadSessions" type="button">Load sessions</button>
+      </div>
+      <div id="message" role="alert"></div>
+    </header>
+
+    <section>
+      <h2>Sessions</h2>
+      <table>
+        <thead><tr><th>Created</th><th>Session</th><th>Condition</th><th>Status</th><th>Files</th></tr></thead>
+        <tbody id="sessions"><tr><td colspan="5">Enter the admin key to load sessions.</td></tr></tbody>
+      </table>
+    </section>
+
+    <section id="details" hidden>
+      <h2>Session details</h2>
+      <p id="sessionSummary"></p>
+      <div id="artifacts"></div>
+      <div id="withdrawalDeletePanel" hidden style="margin-top:18px;padding:16px;border:1px solid #f0a5a5;border-radius:8px;background:#fff5f5;">
+        <strong>Parent withdrawal request recorded</strong>
+        <p>After verifying the request, delete the consent, liveness, and gameplay videos. Behavioral data and the parent-decision record will remain for the audit trail.</p>
+        <button id="deleteSessionVideos" type="button" style="background:#b42318;">Delete session videos</button>
+      </div>
+      <form id="reviewForm" class="review">
+        <label>Decision<br><select id="decision"><option value="approved">Approved</option><option value="excluded">Excluded</option><option value="needs_followup">Needs follow-up</option></select></label>
+        <label>Reviewer<br><input id="reviewer" autocomplete="name"></label>
+        <textarea id="reviewNotes" placeholder="Review notes (for example: child identity/liveness confirmed, camera obstruction, or exclusion reason)"></textarea>
+        <button type="submit">Save review decision</button>
+      </form>
+    </section>
+  </main>
+  <script type="module">
+    const keyInput = document.getElementById('adminKey');
+    const message = document.getElementById('message');
+    const sessionsBody = document.getElementById('sessions');
+    const details = document.getElementById('details');
+    let selectedSessionId = null;
+
+    async function api(path, options = {}) {
+      const response = await fetch(`/api/study/admin${path}`, {
+        ...options,
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Key': keyInput.value, ...(options.headers || {}) }
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+      return body;
+    }
+
+    function cell(row, value) {
+      const element = document.createElement('td');
+      element.textContent = value;
+      row.appendChild(element);
+    }
+
+    async function loadSessions() {
+      message.textContent = '';
+      try {
+        const result = await api('/sessions');
+        sessionsBody.replaceChildren();
+        if (!result.sessions.length) {
+          const row = document.createElement('tr');
+          cell(row, 'No sessions found.');
+          row.firstChild.colSpan = 5;
+          sessionsBody.appendChild(row);
+          return;
+        }
+        result.sessions.forEach(session => {
+          const row = document.createElement('tr');
+          cell(row, new Date(session.createdAt).toLocaleString());
+          cell(row, session.id);
+          cell(row, session.condition);
+          const statusCell = document.createElement('td');
+          const badge = document.createElement('span');
+          badge.className = 'status';
+          badge.textContent = session.status;
+          statusCell.appendChild(badge);
+          row.appendChild(statusCell);
+          cell(row, String(session.artifactCount));
+          row.addEventListener('click', () => showSession(session.id));
+          sessionsBody.appendChild(row);
+        });
+      } catch (error) {
+        message.textContent = error.message;
+      }
+    }
+
+    async function showSession(id) {
+      message.textContent = '';
+      try {
+        const result = await api(`/sessions/${encodeURIComponent(id)}`);
+        selectedSessionId = id;
+        details.hidden = false;
+        document.getElementById('sessionSummary').textContent = `${result.session.id} · ${result.session.condition} · ${result.session.status}`;
+        document.getElementById('withdrawalDeletePanel').hidden = result.session.status !== 'withdrawal_requested';
+        const list = document.getElementById('artifacts');
+        list.replaceChildren();
+        result.artifacts.forEach(artifact => {
+          const row = document.createElement('div');
+          row.className = 'artifact';
+          const kind = document.createElement('strong');
+          kind.textContent = artifact.kind;
+          const name = document.createElement('span');
+          name.textContent = artifact.fileName;
+          const deletedAt = artifact.metadata?.deletedAt;
+          const location = document.createElement(result.session.storageMode === 'google-drive' && !deletedAt ? 'a' : 'span');
+          if (deletedAt) {
+            location.textContent = `Deleted ${new Date(deletedAt).toLocaleString()}`;
+          } else if (result.session.storageMode === 'google-drive') {
+            location.href = `https://drive.google.com/open?id=${encodeURIComponent(artifact.storageFileId)}`;
+            location.target = '_blank';
+            location.rel = 'noopener noreferrer';
+            location.textContent = 'Open in Drive';
+          } else {
+            location.textContent = 'Local test file';
+          }
+          row.append(kind, name, location);
+          list.appendChild(row);
+        });
+        details.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (error) {
+        message.textContent = error.message;
+      }
+    }
+
+    document.getElementById('loadSessions').addEventListener('click', loadSessions);
+    document.getElementById('reviewForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!selectedSessionId) return;
+      message.textContent = '';
+      try {
+        await api(`/sessions/${encodeURIComponent(selectedSessionId)}/review`, {
+          method: 'POST',
+          body: JSON.stringify({
+            decision: document.getElementById('decision').value,
+            reviewer: document.getElementById('reviewer').value,
+            reviewData: { notes: document.getElementById('reviewNotes').value }
+          })
+        });
+        message.style.color = '#16733b';
+        message.textContent = 'Review decision saved.';
+        await loadSessions();
+        await showSession(selectedSessionId);
+      } catch (error) {
+        message.style.color = '#9f1239';
+        message.textContent = error.message;
+      }
+    });
+    document.getElementById('deleteSessionVideos').addEventListener('click', async () => {
+      if (!selectedSessionId) return;
+      if (!window.confirm('Permanently delete all stored videos for this session? Behavioral data and the parent decision will be retained.')) return;
+      message.textContent = '';
+      try {
+        const result = await api(`/sessions/${encodeURIComponent(selectedSessionId)}/delete-videos`, {
+          method: 'POST',
+          body: JSON.stringify({ researcher: document.getElementById('reviewer').value })
+        });
+        message.style.color = '#16733b';
+        message.textContent = `${result.deletedVideoCount} video files deleted.`;
+        await loadSessions();
+        await showSession(selectedSessionId);
+      } catch (error) {
+        message.style.color = '#9f1239';
+        message.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>

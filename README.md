@@ -22,6 +22,13 @@ A modern grid-based collaborative game supporting both human-AI and human-human 
 - Success threshold tracking and adaptive trials
 - Canvas-based game rendering with animations
 - Modular ES6+ architecture
+- Optional self-hosted, self-paced child-study flow with camera recording and Google Drive storage
+
+### Self-hosted study mode
+
+The `self-hosted-study` implementation adds parent permission, child assent, camera setup, segmented video recording, per-trial behavioral checkpoints, Google Drive storage, and an operational session registry. Start with `?studyMode=self-paced` or set `VITE_SELF_HOSTED_STUDY_ENABLED=true`.
+
+See [docs/self-hosted-study-setup.md](docs/self-hosted-study-setup.md) for local testing, current My Drive OAuth configuration, Render deployment, and the later Duke Shared Drive switch.
 
 ## Architecture
 

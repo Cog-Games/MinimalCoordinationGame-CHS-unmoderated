@@ -6,8 +6,9 @@ import { TimelineManager } from '../timeline/TimelineManager.js';
 import { CONFIG, GameConfigUtils } from '../config/gameConfig.js';
 
 export class GameApplication {
-  constructor(container) {
+  constructor(container, studyManager = null) {
     this.container = container;
+    this.studyManager = studyManager;
     this.networkManager = null;
     this.gameStateManager = null;
     this.uiManager = null;
@@ -98,7 +99,7 @@ export class GameApplication {
 
     // Initialize network manager if needed
     const urlParams = new URLSearchParams(window.location.search);
-    const skipNetwork = urlParams.get('skipNetwork') === 'true';
+    const skipNetwork = urlParams.get('skipNetwork') === 'true' || !!this.studyManager;
 
     if (!skipNetwork) {
       try {
@@ -134,7 +135,15 @@ export class GameApplication {
 
     // Check if we should skip network connection for testing
     const urlParams = new URLSearchParams(window.location.search);
-    const skipNetwork = urlParams.get('skipNetwork') === 'true';
+    const skipNetwork = urlParams.get('skipNetwork') === 'true' || !!this.studyManager;
+
+    if (this.studyManager) {
+      GameConfigUtils.setPlayerType(
+        2,
+        this.studyManager.session?.condition === 'individual' ? 'rl_individual' : 'rl_joint'
+      );
+      mode = 'human-ai';
+    }
 
     // Default to configured fallback AI when not explicitly set
     if (!['gpt', 'human', 'rl_joint', 'rl_individual'].includes(CONFIG.game.players.player2.type)) {
@@ -379,6 +388,9 @@ export class GameApplication {
   }
 
   async saveExperimentData(data, options = {}) {
+    if (this.studyManager) {
+      return this.saveSelfHostedExperimentData(data, options);
+    }
     // Save/export experiment data in legacy-compatible shape
     try {
       const saveCheckpoint = options.checkpoint || data.saveCheckpoint || (data.completed ? 'questionnaire_complete' : 'checkpoint');
@@ -729,6 +741,38 @@ export class GameApplication {
       }
     } catch (error) {
       console.error('Failed to save/export experiment data:', error);
+    }
+  }
+
+  async saveSelfHostedExperimentData(data, options = {}) {
+    const isFinal = data?.completed === true || data?.saveCheckpoint === 'questionnaire_complete';
+    if (!isFinal) return;
+    const gsData = this.gameStateManager?.getExperimentData?.() || { allTrialsData: [], successThreshold: {} };
+    const finalData = {
+      participantId: this.studyManager.session?.id,
+      experimentOrder: CONFIG?.game?.experiments?.order || [],
+      allTrialsData: gsData.allTrialsData || [],
+      successThreshold: gsData.successThreshold || {},
+      questionnaireData: data?.questionnaire || null,
+      gamesCompletedAt: data?.gamesCompletedAt || null,
+      questionnaireCompletedAt: data?.questionnaireCompletedAt || data?.endTime || new Date().toISOString(),
+      version: CONFIG?.game?.version || '2.0.0'
+    };
+    try {
+      await this.studyManager.complete(finalData);
+      this.timelineManager?.emit('data-save-success');
+    } catch (error) {
+      console.error('Self-hosted study completion failed:', error);
+      this.studyManager.setSaveProgress(undefined, 'Upload paused. Use Retry upload to continue.', true);
+      const status = document.getElementById('saving-status');
+      if (status) {
+        status.innerHTML = `Data upload is incomplete: ${String(error?.message || error)}<br><button id="retryStudySave" style="margin-top:12px;padding:10px 18px;">Retry upload</button>`;
+        status.style.color = '#b00020';
+        document.getElementById('retryStudySave')?.addEventListener('click', () => {
+          status.textContent = 'Retrying upload…';
+          this.saveSelfHostedExperimentData(data, options);
+        }, { once: true });
+      }
     }
   }
 
@@ -1586,6 +1630,7 @@ export class GameApplication {
   }
 
   handleTrialStart(experimentType, experimentIndex, trialIndex) {
+    this.studyManager?.markTrialStart(experimentType, experimentIndex, trialIndex);
     console.log(`🎬 Trial start notification received: ${experimentType} (${experimentIndex}, ${trialIndex})`);
     console.log('🔍 Player types - P1:', CONFIG.game.players.player1.type, 'P2:', CONFIG.game.players.player2.type);
 
@@ -1606,6 +1651,13 @@ export class GameApplication {
   handleTrialEnd() {
     console.log('🔚 Trial end notification received - stopping inactivity tracking');
     this.stopInactivityTracking();
+  }
+
+  handleTrialFinalized(trialData) {
+    if (!this.studyManager) return;
+    this.studyManager.saveTrialCheckpoint(trialData).catch(error => {
+      console.error('Trial checkpoint save failed:', error);
+    });
   }
 
   // Cleanup
