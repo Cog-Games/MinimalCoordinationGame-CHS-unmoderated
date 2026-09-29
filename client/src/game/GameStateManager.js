@@ -150,6 +150,7 @@ export class GameStateManager {
     this.trialData.player2RT = [];
     this.trialData.currentPlayerIndex = [];
     this.trialData.gptErrorEvents = [];
+    this.trialData.dpDecisions = [];
     this.trialData.player1StartPosition = null;
     this.trialData.player2StartPosition = null;
     this.trialData.initialGoalPositions = [];
@@ -278,6 +279,11 @@ export class GameStateManager {
     try {
       if (design && typeof design === 'object') {
         this.trialData.mapId = design.map_id ?? null;
+        this.trialData.mapSet = design.map_set ?? null;
+        this.trialData.sourceMapId = design.source_map_id ?? null;
+        this.trialData.trialPhase = design.trial_phase ?? null;
+        this.trialData.rotationDegrees = design.rotation_degrees ?? null;
+        this.trialData.participantRewards = design.participant_rewards ? {...design.participant_rewards} : null;
         this.trialData.mapAscii = Array.isArray(design.ascii) ? design.ascii.slice() : (design.ascii ?? null);
         this.trialData.signaling = design.signaling ? { ...design.signaling } : null;
         this.trialData.distanceSummary = design.distance_summary ? { ...design.distance_summary } : null;
@@ -302,8 +308,8 @@ export class GameStateManager {
       // With swap:    player1 starts at orange (Signaler),     player2 at red (Non-Signaler).
       if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
         const swapped = this.trialData.playerStartPositionsSwapped === true;
-        this.trialData.player1Role = swapped ? 'Signaler' : 'Non-Signaler';
-        this.trialData.player2Role = swapped ? 'Non-Signaler' : 'Signaler';
+        this.trialData.player1Role = design?.signaling?.both_players_can_signal ? 'Signaler' : (swapped ? 'Signaler' : 'Non-Signaler');
+        this.trialData.player2Role = design?.signaling?.both_players_can_signal ? 'Signaler' : (swapped ? 'Non-Signaler' : 'Signaler');
       } else {
         this.trialData.player1Role = null;
         this.trialData.player2Role = null;
@@ -315,7 +321,9 @@ export class GameStateManager {
 
   initializeScoreStateForTrial(experimentType) {
     const rewardsCfg = CONFIG?.game?.rewards || {};
-    const initialPoints = Number.isFinite(rewardsCfg.initialPointsPerTrial)
+    const initialPoints = Number.isFinite(this.currentMapDesign?.participant_rewards?.initial_points)
+      ? this.currentMapDesign.participant_rewards.initial_points
+      : Number.isFinite(rewardsCfg.initialPointsPerTrial)
       ? rewardsCfg.initialPointsPerTrial
       : 15;
     const isTwoPlayer = GameConfigUtils.isTwoPlayerExperiment(experimentType);
@@ -352,6 +360,7 @@ export class GameStateManager {
   // For StagHunt trials, prefer the per-map `utility_summary.step_cost_per_move`
   // (stored as a negative number in the map file) over the global config default.
   getStepPenaltyForCurrentTrial(rewardsCfg = CONFIG?.game?.rewards || {}) {
+    if (Number.isFinite(this.currentMapDesign?.participant_rewards?.step_penalty)) return this.currentMapDesign.participant_rewards.step_penalty;
     const globalPenalty = Number.isFinite(rewardsCfg.stepPenalty) ? rewardsCfg.stepPenalty : 1;
     try {
       const exp = String(this.currentState?.experimentType || this.trialData?.experimentType || '');
@@ -934,7 +943,7 @@ export class GameStateManager {
       if (idx === null || idx === undefined) return null;
       const type = goalTypes[idx] || 'small';
       if (type === 'big') return idx;
-      if (claimedSet.has(idx)) return null;
+      if (claimedSet.has(idx) && this.currentMapDesign?.map_set !== 'variable-distance-16-v1') return null;
       return idx;
     };
 
@@ -962,8 +971,11 @@ export class GameStateManager {
     if (GameConfigUtils.isStagHuntExperiment(this.currentState.experimentType)) {
       // Apply rewards and update totals as soon as a rabbit is caught or the
       // stag is jointly caught, rather than waiting until trial finalization.
-      this.computeRewardsForTrial({ commitResolvedOnly: true });
       const stagHuntOutcome = GameHelpers.evaluateStagHuntOutcome(this.currentState, this.trialData);
+      if (this.currentMapDesign?.map_set === 'variable-distance-16-v1') {
+        // Match the calibrated baseline: settle once both are locked or at timeout.
+        if (stagHuntOutcome.trialComplete || this.stepCount >= CONFIG.game.maxGameLength) this.computeRewardsForTrial();
+      } else this.computeRewardsForTrial({ commitResolvedOnly: true });
       this.trialData.collaborationSucceeded = stagHuntOutcome.collaborationSucceeded;
       return stagHuntOutcome.trialComplete || this.stepCount >= CONFIG.game.maxGameLength;
     } else if (this.currentState.experimentType.startsWith('1P')) {
@@ -1113,6 +1125,7 @@ export class GameStateManager {
         // Solo collection: only small goals pay out; big goals require both players
         if (valid1 && type1 === 'small') p1Reward = smallReward;
         if (valid2 && type2 === 'small') p2Reward = smallReward;
+        if (this.currentMapDesign?.map_set === 'variable-distance-16-v1' && valid1 && valid2 && p1Idx === p2Idx && type1 === 'small') p1Reward = p2Reward = smallReward / 2;
       }
     } else {
       // 1P experiments: any reached goal gives the small-goal reward

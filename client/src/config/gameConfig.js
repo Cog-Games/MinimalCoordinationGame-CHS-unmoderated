@@ -15,37 +15,9 @@ const defaultServerUrl = (typeof window !== 'undefined' && window.location && wi
   ? window.location.origin
   : 'http://localhost:3001';
 
-/** sessionStorage key: one random joint vs individual assignment per browser tab/session */
-const RL_ASSIGNMENT_SESSION_KEY = 'gridworld.rlStudyCondition';
-
-const pickRandomJointOrIndividual = () => (Math.random() < 0.5 ? 'joint' : 'individual');
-
-/**
- * Each new participant session (new tab) gets a 50/50 joint vs individual assignment.
- * Reuses the same assignment if they refresh (sessionStorage). Optional URL ?ai= still overrides via GameApplication + setPlayerType.
- * Set VITE_STUDY_RL_CONDITION=joint or =individual to force (e.g. QA builds).
- */
-const resolveParticipantRLCondition = () => {
-  const forced = String(getEnvVar('VITE_STUDY_RL_CONDITION', '') || '').toLowerCase();
-  if (forced === 'joint' || forced === 'individual') return forced;
-
-  try {
-    if (typeof sessionStorage !== 'undefined') {
-      const prev = sessionStorage.getItem(RL_ASSIGNMENT_SESSION_KEY);
-      if (prev === 'joint' || prev === 'individual') return prev;
-      const chosen = pickRandomJointOrIndividual();
-      sessionStorage.setItem(RL_ASSIGNMENT_SESSION_KEY, chosen);
-      return chosen;
-    }
-  } catch (_) {
-    // private mode / blocked storage — fall through to one-shot random
-  }
-  return pickRandomJointOrIndividual();
-};
-
-const participantRLCondition = resolveParticipantRLCondition();
-const assignedRLPartnerType = participantRLCondition === 'joint' ? 'rl_joint' : 'rl_individual';
-const assignedAgentMode = participantRLCondition === 'joint' ? 'joint' : 'individual';
+// The default study partner is the calibrated discounted joint-DP baseline.
+// Explicit ?ai= overrides still work through GameConfigUtils.setPlayerType.
+const participantRLCondition = 'joint';
 
 export const CONFIG = {
   // Debug / logging configuration
@@ -86,7 +58,7 @@ export const CONFIG = {
     turnTaking: {
       startingPlayer: 1
     },
-    swapPlayerStartPositionsHalfTime: true,
+    swapPlayerStartPositionsHalfTime: false,
 
     // Player configuration
     players: {
@@ -97,7 +69,7 @@ export const CONFIG = {
       },
       player2: {
         // Types: 'human' | 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_individual' | 'rl_joint' | 'we_intent_js'
-        type: 'vlm',
+        type: 'rl_joint',
         color: 'orange',
         description: 'Human, GPT, or RL partner'
       }
@@ -122,14 +94,15 @@ export const CONFIG = {
       // Phase 3 is the comprehension check, no trials). Each phase's cake
       // tower resets at its first trial. Sum must equal numTrials.StagHunt.
       stagHuntPhaseRounds: [1, 4, 16],
+      stagHuntOnboardingMapIds: ['2', '1', '5', '3', '9'],
 
-      // 'fixed' keeps the 18 Stag Hunt maps in numeric order for development.
+      // Shuffle the 16 main maps once; keep onboarding separate.
       mapOrder: {
         '1P1G': 'random',
         '1P2G': 'random',
         '2P2G': 'random',
         '2P3G': 'random',
-        'StagHunt': 'fixed',
+        'StagHunt': 'random',
         'StagHuntTwoStags': 'random'
       },
 
@@ -178,6 +151,7 @@ export const CONFIG = {
     agent: {
       // RL mode for player2 when using RL: 'individual' or 'joint'
       type: 'joint',
+      stagHuntDP: { enabled: true, cost: 0.9, gamma: 0.9, tau: 0.2, horizon: 60, stagReward: 5, hareReward: 1 },
       delay: 500,
       independentDelay: 300,
       // When true, AI/GPT/SA moves are synchronized with human input.
@@ -307,7 +281,7 @@ export const CONFIG = {
     matchPlayReadyTimeout: 10000,
     // Fallback AI partner type when human-human matching fails
     // Allowed: 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_individual' | 'rl_joint' | 'we_intent_js'
-    fallbackAIType: 'vlm-ToM',
+    fallbackAIType: 'rl_joint',
     // Partner inactivity settings
     inactivityFallback: {
       // Enable automatic fallback to AI when partner is inactive

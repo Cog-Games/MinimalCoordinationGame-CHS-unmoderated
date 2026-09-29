@@ -11,7 +11,8 @@
     "deploy": "npm run build && gh-pages -d dist -b gh-pages -f",
     "preview": "vite preview",
     "start": "node server/index.js",
-    "render-build": "npm install && vite build"
+    "render-build": "npm install && vite build",
+    "test:stag-dp": "node tests/stag-variable-dp.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

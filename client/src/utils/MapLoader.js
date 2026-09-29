@@ -363,13 +363,24 @@ export class MapLoader {
       }
     }
 
+    // Cake flow: five onboarding rounds, then all sixteen main maps exactly once.
+    let trialKeys = null;
+    if (experimentType === 'StagHunt' && nTrials > keys.length &&
+        Object.values(mapData).every(xs => xs[0]?.map_set === 'variable-distance-16-v1')) {
+      const onboarding = CONFIG.game.experiments.stagHuntOnboardingMapIds;
+      if (nTrials !== onboarding.length + keys.length || onboarding.some(k => !mapData[k])) {
+        throw new Error('Stag Hunt schedule must contain onboarding plus one complete 16-map set');
+      }
+      trialKeys = [...onboarding, ...orderedKeys];
+    }
     const selectedMaps = [];
     for (let i = 0; i < nTrials; i++) {
-      const randomKey = orderedKeys[i % orderedKeys.length];
+      const randomKey = trialKeys ? trialKeys[i] : orderedKeys[i % orderedKeys.length];
       // Map data structure is: { "key": [{ designObject }] }
       const mapArray = mapData[randomKey];
       if (Array.isArray(mapArray) && mapArray.length > 0) {
         let mapDesign = { ...mapArray[0] }; // Clone the design object
+        if (trialKeys) mapDesign.trial_phase = i < CONFIG.game.experiments.stagHuntOnboardingMapIds.length ? 'onboarding' : 'main';
 
         // Apply randomization
         // If map uses asciiMap, prefer ASCII transformation for robustness

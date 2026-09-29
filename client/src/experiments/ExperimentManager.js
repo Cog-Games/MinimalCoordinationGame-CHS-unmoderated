@@ -478,6 +478,11 @@ export class ExperimentManager {
     return {
       goalTypes,
       utilitySummary,
+      completedTurns: this.gameStateManager.stepCount,
+      recordDPDecision: decision => {
+        const td = this.gameStateManager.getCurrentTrialData();
+        if (td) (td.dpDecisions ||= []).push({ step: this.gameStateManager.stepCount, ...decision });
+      },
       experimentType: gameState?.experimentType || null
     };
   }

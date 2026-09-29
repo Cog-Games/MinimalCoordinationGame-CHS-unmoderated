@@ -1,3 +1,4 @@
+import { DiscountedJointDP } from './DiscountedJointDP.js';
 import { CONFIG, GAME_OBJECTS } from '../config/gameConfig.js';
 
 // Legacy-aligned RL agent configuration
@@ -977,10 +978,16 @@ const JointBFSPlanner = {
 export class RLAgent {
   constructor() {
     this.isPreCalculating = false;
+    this.discountedDP = new DiscountedJointDP(CONFIG.game.agent.stagHuntDP);
   }
 
   getAIAction(gridMatrix, currentPos, goals, playerPos = null, context = {}) {
     if (!goals || goals.length === 0) return null;
+    if (context.experimentType === 'StagHunt' && CONFIG.game.agent.type === 'joint' && CONFIG.game.agent.stagHuntDP?.enabled) {
+      const action = this.discountedDP.getAction(gridMatrix, currentPos, playerPos, goals, context.goalTypes, context.completedTurns || 0);
+      context.recordDPDecision?.(this.discountedDP.lastDecision);
+      return action;
+    }
 
     try {
       if (playerPos && CONFIG.game.agent.type === 'joint') {
@@ -1082,6 +1089,7 @@ export class RLAgent {
   }
 
   precalculatePolicyForGoals(goals, _experimentType, context = {}) {
+    if (_experimentType === 'StagHunt' && CONFIG.game.agent.stagHuntDP?.enabled) return;
     if (this.isPreCalculating) return;
     this.isPreCalculating = true;
 

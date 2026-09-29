@@ -1,28 +1,13 @@
-var MapsForStagHunt = {
-  "1": [
-    {
-      "map_id": 1,
-      "source_map_id": "M01",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 0,
-      "ascii": [
-        "O.......#",
-        ".###.###.",
-        ".###.###.",
-        ".r##.###.",
-        "....S....",
-        ".###.##r.",
-        ".###.###.",
-        ".###.###.",
-        "#.......R"
-      ],
-      "orange": [
+[
+  {
+    "id": 1,
+    "canonicalSpec": {
+      "id": "M01",
+      "aiStart": [
         0,
         0
       ],
-      "red": [
+      "childStart": [
         8,
         8
       ],
@@ -30,7 +15,7 @@ var MapsForStagHunt = {
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
           3,
           1
@@ -39,6 +24,10 @@ var MapsForStagHunt = {
           5,
           7
         ]
+      ],
+      "distances": [
+        4,
+        4
       ],
       "obstacles": [
         [
@@ -185,84 +174,50 @@ var MapsForStagHunt = {
           8,
           0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "right",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          0,
-          1
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 4,
-        "red_to_hare": 4,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "2": [
-    {
-      "map_id": 2,
-      "source_map_id": "M02",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 90,
-      "ascii": [
-        "#.......O",
-        ".###.###.",
-        ".###.r##.",
-        ".###.###.",
-        "....S....",
-        ".###.###.",
-        ".##r.###.",
-        ".###.###.",
-        "R.......#"
-      ],
-      "orange": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.009413000171663324,
+      0,
+      0.9905869998283368
+    ],
+    "value": -4.878
+  },
+  {
+    "id": 2,
+    "canonicalSpec": {
+      "id": "M02",
+      "aiStart": [
         0,
-        8
-      ],
-      "red": [
-        8,
         0
+      ],
+      "childStart": [
+        8,
+        8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
-          2,
-          5
+          3,
+          2
         ],
         [
-          6,
-          3
+          5,
+          6
         ]
+      ],
+      "distances": [
+        7,
+        7
       ],
       "obstacles": [
         [
           0,
-          0
+          8
         ],
         [
           1,
@@ -302,6 +257,10 @@ var MapsForStagHunt = {
         ],
         [
           2,
+          5
+        ],
+        [
+          2,
           6
         ],
         [
@@ -314,10 +273,6 @@ var MapsForStagHunt = {
         ],
         [
           3,
-          2
-        ],
-        [
-          3,
           3
         ],
         [
@@ -347,10 +302,6 @@ var MapsForStagHunt = {
         [
           5,
           5
-        ],
-        [
-          5,
-          6
         ],
         [
           5,
@@ -363,6 +314,10 @@ var MapsForStagHunt = {
         [
           6,
           2
+        ],
+        [
+          6,
+          3
         ],
         [
           6,
@@ -402,81 +357,47 @@ var MapsForStagHunt = {
         ],
         [
           8,
-          8
+          0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "down",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          1,
-          8
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 7,
-        "red_to_hare": 7,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "3": [
-    {
-      "map_id": 3,
-      "source_map_id": "M03",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 180,
-      "ascii": [
-        "R.......#",
-        ".###.###.",
-        ".###.###.",
-        ".###.###r",
-        "....S....",
-        "r###.###.",
-        ".###.###.",
-        ".###.###.",
-        "#.......O"
-      ],
-      "orange": [
-        8,
-        8
-      ],
-      "red": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  },
+  {
+    "id": 3,
+    "canonicalSpec": {
+      "id": "M03",
+      "aiStart": [
         0,
         0
+      ],
+      "childStart": [
+        8,
+        8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
-        [
-          3,
-          8
-        ],
+      "hares": [
         [
           5,
           0
+        ],
+        [
+          3,
+          8
         ]
+      ],
+      "distances": [
+        5,
+        5
       ],
       "obstacles": [
         [
@@ -631,84 +552,50 @@ var MapsForStagHunt = {
           8,
           0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "left",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          8,
-          7
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 5,
-        "red_to_hare": 5,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "4": [
-    {
-      "map_id": 4,
-      "source_map_id": "M04",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 270,
-      "ascii": [
-        "#.......R",
-        ".##r.###.",
-        ".###.###.",
-        ".###.###.",
-        "....S....",
-        ".###.###.",
-        ".###.###.",
-        ".###.r##.",
-        "O.......#"
-      ],
-      "orange": [
-        8,
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  },
+  {
+    "id": 4,
+    "canonicalSpec": {
+      "id": "M04",
+      "aiStart": [
+        0,
         0
       ],
-      "red": [
-        0,
+      "childStart": [
+        8,
         8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
-          7,
-          5
+          5,
+          1
         ],
         [
-          1,
-          3
+          3,
+          7
         ]
+      ],
+      "distances": [
+        6,
+        6
       ],
       "obstacles": [
         [
           0,
-          0
+          8
         ],
         [
           1,
@@ -717,6 +604,10 @@ var MapsForStagHunt = {
         [
           1,
           2
+        ],
+        [
+          1,
+          3
         ],
         [
           1,
@@ -773,14 +664,6 @@ var MapsForStagHunt = {
         [
           3,
           6
-        ],
-        [
-          3,
-          7
-        ],
-        [
-          5,
-          1
         ],
         [
           5,
@@ -837,6 +720,10 @@ var MapsForStagHunt = {
         [
           7,
           3
+        ],
+        [
+          7,
+          5
         ],
         [
           7,
@@ -848,65 +735,27 @@ var MapsForStagHunt = {
         ],
         [
           8,
-          8
-        ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "up",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          7,
           0
         ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 6,
-        "red_to_hare": 6,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "5": [
-    {
-      "map_id": 5,
-      "source_map_id": "M05",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 0,
-      "ascii": [
-        "O.......#",
-        ".###.###.",
-        ".r##.###.",
-        ".###.###.",
-        "....S....",
-        ".###.##r.",
-        ".###.###.",
-        ".###.###.",
-        "#.......R"
-      ],
-      "orange": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  },
+  {
+    "id": 5,
+    "canonicalSpec": {
+      "id": "M05",
+      "aiStart": [
         0,
         0
       ],
-      "red": [
+      "childStart": [
         8,
         8
       ],
@@ -914,7 +763,7 @@ var MapsForStagHunt = {
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
           2,
           1
@@ -923,6 +772,10 @@ var MapsForStagHunt = {
           5,
           7
         ]
+      ],
+      "distances": [
+        3,
+        4
       ],
       "obstacles": [
         [
@@ -1069,298 +922,45 @@ var MapsForStagHunt = {
           8,
           0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "right",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          0,
-          1
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 3,
-        "red_to_hare": 4,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "6": [
-    {
-      "map_id": 6,
-      "source_map_id": "M06",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 90,
-      "ascii": [
-        "#.......O",
-        ".###.r##.",
-        ".###.###.",
-        ".###.###.",
-        "....S....",
-        ".###.###.",
-        ".###.###.",
-        ".#r#.###.",
-        "R.......#"
-      ],
-      "orange": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.0011957333198276071,
+      0,
+      0.9988042666801723
+    ],
+    "value": -4.2219
+  },
+  {
+    "id": 6,
+    "canonicalSpec": {
+      "id": "M06",
+      "aiStart": [
         0,
-        8
-      ],
-      "red": [
-        8,
         0
+      ],
+      "childStart": [
+        8,
+        8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
-          1,
-          5
+          3,
+          1
         ],
         [
-          7,
-          2
+          6,
+          7
         ]
       ],
-      "obstacles": [
-        [
-          0,
-          0
-        ],
-        [
-          1,
-          1
-        ],
-        [
-          1,
-          2
-        ],
-        [
-          1,
-          3
-        ],
-        [
-          1,
-          6
-        ],
-        [
-          1,
-          7
-        ],
-        [
-          2,
-          1
-        ],
-        [
-          2,
-          2
-        ],
-        [
-          2,
-          3
-        ],
-        [
-          2,
-          5
-        ],
-        [
-          2,
-          6
-        ],
-        [
-          2,
-          7
-        ],
-        [
-          3,
-          1
-        ],
-        [
-          3,
-          2
-        ],
-        [
-          3,
-          3
-        ],
-        [
-          3,
-          5
-        ],
-        [
-          3,
-          6
-        ],
-        [
-          3,
-          7
-        ],
-        [
-          5,
-          1
-        ],
-        [
-          5,
-          2
-        ],
-        [
-          5,
-          3
-        ],
-        [
-          5,
-          5
-        ],
-        [
-          5,
-          6
-        ],
-        [
-          5,
-          7
-        ],
-        [
-          6,
-          1
-        ],
-        [
-          6,
-          2
-        ],
-        [
-          6,
-          3
-        ],
-        [
-          6,
-          5
-        ],
-        [
-          6,
-          6
-        ],
-        [
-          6,
-          7
-        ],
-        [
-          7,
-          1
-        ],
-        [
-          7,
-          3
-        ],
-        [
-          7,
-          5
-        ],
-        [
-          7,
-          6
-        ],
-        [
-          7,
-          7
-        ],
-        [
-          8,
-          8
-        ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "down",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          1,
-          8
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 4,
-        "red_to_hare": 3,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "7": [
-    {
-      "map_id": 7,
-      "source_map_id": "M07",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 180,
-      "ascii": [
-        "R.......#",
-        ".###.###.",
-        ".###.###.",
-        ".#r#.###.",
-        "....S....",
-        ".###.###.",
-        ".###.##r.",
-        ".###.###.",
-        "#.......O"
-      ],
-      "orange": [
-        8,
-        8
-      ],
-      "red": [
-        0,
-        0
-      ],
-      "stag": [
+      "distances": [
         4,
-        4
-      ],
-      "rabbits": [
-        [
-          6,
-          7
-        ],
-        [
-          3,
-          2
-        ]
+        3
       ],
       "obstacles": [
         [
@@ -1417,7 +1017,7 @@ var MapsForStagHunt = {
         ],
         [
           3,
-          1
+          2
         ],
         [
           3,
@@ -1507,84 +1107,50 @@ var MapsForStagHunt = {
           8,
           0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "left",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          8,
-          7
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 3,
-        "red_to_hare": 7,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "8": [
-    {
-      "map_id": 8,
-      "source_map_id": "M08",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 270,
-      "ascii": [
-        "#.......R",
-        ".###.#r#.",
-        ".###.###.",
-        ".###.###.",
-        "....S....",
-        ".###.###.",
-        ".##r.###.",
-        ".###.###.",
-        "O.......#"
-      ],
-      "orange": [
-        8,
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.0012296356858727106,
+      0,
+      0.9987703643141271
+    ],
+    "value": -4.2219
+  },
+  {
+    "id": 7,
+    "canonicalSpec": {
+      "id": "M07",
+      "aiStart": [
+        0,
         0
       ],
-      "red": [
-        0,
+      "childStart": [
+        8,
         8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
-          6,
-          3
+          2,
+          1
         ],
         [
-          1,
+          5,
           6
         ]
+      ],
+      "distances": [
+        3,
+        7
       ],
       "obstacles": [
         [
           0,
-          0
+          8
         ],
         [
           1,
@@ -1604,11 +1170,11 @@ var MapsForStagHunt = {
         ],
         [
           1,
-          7
+          6
         ],
         [
-          2,
-          1
+          1,
+          7
         ],
         [
           2,
@@ -1669,10 +1235,6 @@ var MapsForStagHunt = {
         [
           5,
           5
-        ],
-        [
-          5,
-          6
         ],
         [
           5,
@@ -1685,6 +1247,10 @@ var MapsForStagHunt = {
         [
           6,
           2
+        ],
+        [
+          6,
+          3
         ],
         [
           6,
@@ -1724,65 +1290,27 @@ var MapsForStagHunt = {
         ],
         [
           8,
-          8
-        ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "up",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          7,
           0
         ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 7,
-        "red_to_hare": 3,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "9": [
-    {
-      "map_id": 9,
-      "source_map_id": "M09",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 0,
-      "ascii": [
-        "O.......#",
-        ".###.###.",
-        ".r##.###.",
-        ".###.##r.",
-        "....S....",
-        ".###.###.",
-        ".###.###.",
-        ".###.###.",
-        "#.......R"
-      ],
-      "orange": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  },
+  {
+    "id": 8,
+    "canonicalSpec": {
+      "id": "M08",
+      "aiStart": [
         0,
         0
       ],
-      "red": [
+      "childStart": [
         8,
         8
       ],
@@ -1790,7 +1318,192 @@ var MapsForStagHunt = {
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
+        [
+          3,
+          2
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "distances": [
+        7,
+        3
+      ],
+      "obstacles": [
+        [
+          0,
+          8
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          5
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          1,
+          7
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          2,
+          6
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          3,
+          6
+        ],
+        [
+          3,
+          7
+        ],
+        [
+          5,
+          1
+        ],
+        [
+          5,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          5,
+          7
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          1
+        ],
+        [
+          7,
+          2
+        ],
+        [
+          7,
+          3
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          0
+        ]
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  },
+  {
+    "id": 9,
+    "canonicalSpec": {
+      "id": "M09",
+      "aiStart": [
+        0,
+        0
+      ],
+      "childStart": [
+        8,
+        8
+      ],
+      "stag": [
+        4,
+        4
+      ],
+      "hares": [
         [
           2,
           1
@@ -1799,6 +1512,10 @@ var MapsForStagHunt = {
           3,
           7
         ]
+      ],
+      "distances": [
+        3,
+        6
       ],
       "obstacles": [
         [
@@ -1945,84 +1662,50 @@ var MapsForStagHunt = {
           8,
           0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "right",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          0,
-          1
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 3,
-        "red_to_hare": 6,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "10": [
-    {
-      "map_id": 10,
-      "source_map_id": "M10",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 90,
-      "ascii": [
-        "#.......O",
-        ".##r.###.",
-        ".###.###.",
-        ".###.###.",
-        "....S....",
-        ".###.###.",
-        ".###.###.",
-        ".#r#.###.",
-        "R.......#"
-      ],
-      "orange": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.22562973363688052,
+      0,
+      0.7743702663631195
+    ],
+    "value": -5.593149
+  },
+  {
+    "id": 10,
+    "canonicalSpec": {
+      "id": "M10",
+      "aiStart": [
         0,
-        8
-      ],
-      "red": [
-        8,
         0
+      ],
+      "childStart": [
+        8,
+        8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
-          1,
-          3
+          5,
+          1
         ],
         [
-          7,
-          2
+          6,
+          7
         ]
+      ],
+      "distances": [
+        6,
+        3
       ],
       "obstacles": [
         [
           0,
-          0
+          8
         ],
         [
           1,
@@ -2031,6 +1714,10 @@ var MapsForStagHunt = {
         [
           1,
           2
+        ],
+        [
+          1,
+          3
         ],
         [
           1,
@@ -2094,10 +1781,6 @@ var MapsForStagHunt = {
         ],
         [
           5,
-          1
-        ],
-        [
-          5,
           2
         ],
         [
@@ -2135,14 +1818,14 @@ var MapsForStagHunt = {
         [
           6,
           6
-        ],
-        [
-          6,
-          7
         ],
         [
           7,
           1
+        ],
+        [
+          7,
+          2
         ],
         [
           7,
@@ -2162,81 +1845,236 @@ var MapsForStagHunt = {
         ],
         [
           8,
-          8
+          0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "down",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          1,
-          8
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 6,
-        "red_to_hare": 3,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "11": [
-    {
-      "map_id": 11,
-      "source_map_id": "M11",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 180,
-      "ascii": [
-        "R.......#",
-        ".###.###.",
-        ".###.###.",
-        ".###.###.",
-        "....S....",
-        "r###.##r.",
-        ".###.###.",
-        ".###.###.",
-        "#.......O"
-      ],
-      "orange": [
-        8,
-        8
-      ],
-      "red": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.22562973363688052,
+      0,
+      0.7743702663631195
+    ],
+    "value": -5.593149
+  },
+  {
+    "id": 11,
+    "canonicalSpec": {
+      "id": "M11",
+      "aiStart": [
         0,
         0
+      ],
+      "childStart": [
+        8,
+        8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
+        [
+          3,
+          1
+        ],
+        [
+          3,
+          8
+        ]
+      ],
+      "distances": [
+        4,
+        5
+      ],
+      "obstacles": [
+        [
+          0,
+          8
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          5
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          1,
+          7
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          2,
+          6
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          3,
+          6
+        ],
+        [
+          3,
+          7
+        ],
+        [
+          5,
+          1
+        ],
+        [
+          5,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          5,
+          6
+        ],
         [
           5,
           7
         ],
         [
-          5,
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          1
+        ],
+        [
+          7,
+          2
+        ],
+        [
+          7,
+          3
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
           0
         ]
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.2305520695069883,
+      0,
+      0.7694479304930116
+    ],
+    "value": -5.59971
+  },
+  {
+    "id": 12,
+    "canonicalSpec": {
+      "id": "M12",
+      "aiStart": [
+        0,
+        0
+      ],
+      "childStart": [
+        8,
+        8
+      ],
+      "stag": [
+        4,
+        4
+      ],
+      "hares": [
+        [
+          5,
+          0
+        ],
+        [
+          5,
+          7
+        ]
+      ],
+      "distances": [
+        5,
+        4
       ],
       "obstacles": [
         [
@@ -2387,286 +2225,25 @@ var MapsForStagHunt = {
           8,
           0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "left",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          8,
-          7
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 4,
-        "red_to_hare": 5,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "12": [
-    {
-      "map_id": 12,
-      "source_map_id": "M12",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 270,
-      "ascii": [
-        "#.......R",
-        ".###.r##.",
-        ".###.###.",
-        ".###.###.",
-        "....S....",
-        ".###.###.",
-        ".###.###.",
-        ".###.###.",
-        "O....r..#"
-      ],
-      "orange": [
-        8,
-        0
-      ],
-      "red": [
-        0,
-        8
-      ],
-      "stag": [
-        4,
-        4
-      ],
-      "rabbits": [
-        [
-          8,
-          5
-        ],
-        [
-          1,
-          5
-        ]
-      ],
-      "obstacles": [
-        [
-          0,
-          0
-        ],
-        [
-          1,
-          1
-        ],
-        [
-          1,
-          2
-        ],
-        [
-          1,
-          3
-        ],
-        [
-          1,
-          6
-        ],
-        [
-          1,
-          7
-        ],
-        [
-          2,
-          1
-        ],
-        [
-          2,
-          2
-        ],
-        [
-          2,
-          3
-        ],
-        [
-          2,
-          5
-        ],
-        [
-          2,
-          6
-        ],
-        [
-          2,
-          7
-        ],
-        [
-          3,
-          1
-        ],
-        [
-          3,
-          2
-        ],
-        [
-          3,
-          3
-        ],
-        [
-          3,
-          5
-        ],
-        [
-          3,
-          6
-        ],
-        [
-          3,
-          7
-        ],
-        [
-          5,
-          1
-        ],
-        [
-          5,
-          2
-        ],
-        [
-          5,
-          3
-        ],
-        [
-          5,
-          5
-        ],
-        [
-          5,
-          6
-        ],
-        [
-          5,
-          7
-        ],
-        [
-          6,
-          1
-        ],
-        [
-          6,
-          2
-        ],
-        [
-          6,
-          3
-        ],
-        [
-          6,
-          5
-        ],
-        [
-          6,
-          6
-        ],
-        [
-          6,
-          7
-        ],
-        [
-          7,
-          1
-        ],
-        [
-          7,
-          2
-        ],
-        [
-          7,
-          3
-        ],
-        [
-          7,
-          5
-        ],
-        [
-          7,
-          6
-        ],
-        [
-          7,
-          7
-        ],
-        [
-          8,
-          8
-        ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "up",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          7,
-          0
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 5,
-        "red_to_hare": 4,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "13": [
-    {
-      "map_id": 13,
-      "source_map_id": "M13",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 0,
-      "ascii": [
-        "O.......#",
-        ".###.###.",
-        ".###.###.",
-        ".r##.##r.",
-        "....S....",
-        ".###.###.",
-        ".###.###.",
-        ".###.###.",
-        "#.......R"
-      ],
-      "orange": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.2305520695069883,
+      0,
+      0.7694479304930116
+    ],
+    "value": -5.59971
+  },
+  {
+    "id": 13,
+    "canonicalSpec": {
+      "id": "M13",
+      "aiStart": [
         0,
         0
       ],
-      "red": [
+      "childStart": [
         8,
         8
       ],
@@ -2674,7 +2251,7 @@ var MapsForStagHunt = {
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
           3,
           1
@@ -2683,6 +2260,10 @@ var MapsForStagHunt = {
           3,
           7
         ]
+      ],
+      "distances": [
+        4,
+        6
       ],
       "obstacles": [
         [
@@ -2829,84 +2410,50 @@ var MapsForStagHunt = {
           8,
           0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "right",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          0,
-          1
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 4,
-        "red_to_hare": 6,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "14": [
-    {
-      "map_id": 14,
-      "source_map_id": "M14",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 90,
-      "ascii": [
-        "#.......O",
-        ".##r.###.",
-        ".###.###.",
-        ".###.###.",
-        "....S....",
-        ".###.###.",
-        ".###.###.",
-        ".##r.###.",
-        "R.......#"
-      ],
-      "orange": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  },
+  {
+    "id": 14,
+    "canonicalSpec": {
+      "id": "M14",
+      "aiStart": [
         0,
-        8
-      ],
-      "red": [
-        8,
         0
+      ],
+      "childStart": [
+        8,
+        8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
         [
-          1,
-          3
+          5,
+          1
         ],
         [
-          7,
-          3
+          5,
+          7
         ]
+      ],
+      "distances": [
+        6,
+        4
       ],
       "obstacles": [
         [
           0,
-          0
+          8
         ],
         [
           1,
@@ -2915,6 +2462,10 @@ var MapsForStagHunt = {
         [
           1,
           2
+        ],
+        [
+          1,
+          3
         ],
         [
           1,
@@ -2978,10 +2529,6 @@ var MapsForStagHunt = {
         ],
         [
           5,
-          1
-        ],
-        [
-          5,
           2
         ],
         [
@@ -2995,10 +2542,6 @@ var MapsForStagHunt = {
         [
           5,
           6
-        ],
-        [
-          5,
-          7
         ],
         [
           6,
@@ -3031,6 +2574,10 @@ var MapsForStagHunt = {
         [
           7,
           2
+        ],
+        [
+          7,
+          3
         ],
         [
           7,
@@ -3046,81 +2593,236 @@ var MapsForStagHunt = {
         ],
         [
           8,
-          8
+          0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "down",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          1,
-          8
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 6,
-        "red_to_hare": 4,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "15": [
-    {
-      "map_id": 15,
-      "source_map_id": "M15",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 180,
-      "ascii": [
-        "R.......#",
-        ".###.###.",
-        ".###.###.",
-        ".###.###r",
-        "....S....",
-        ".#r#.###.",
-        ".###.###.",
-        ".###.###.",
-        "#.......O"
-      ],
-      "orange": [
-        8,
-        8
-      ],
-      "red": [
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  },
+  {
+    "id": 15,
+    "canonicalSpec": {
+      "id": "M15",
+      "aiStart": [
         0,
         0
+      ],
+      "childStart": [
+        8,
+        8
       ],
       "stag": [
         4,
         4
       ],
-      "rabbits": [
+      "hares": [
+        [
+          5,
+          0
+        ],
         [
           3,
+          6
+        ]
+      ],
+      "distances": [
+        5,
+        7
+      ],
+      "obstacles": [
+        [
+          0,
           8
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          5
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          1,
+          7
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          2,
+          6
+        ],
+        [
+          2,
+          7
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          3,
+          7
+        ],
+        [
+          5,
+          1
         ],
         [
           5,
           2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          5,
+          7
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          1
+        ],
+        [
+          7,
+          2
+        ],
+        [
+          7,
+          3
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          0
         ]
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  },
+  {
+    "id": 16,
+    "canonicalSpec": {
+      "id": "M16",
+      "aiStart": [
+        0,
+        0
+      ],
+      "childStart": [
+        8,
+        8
+      ],
+      "stag": [
+        4,
+        4
+      ],
+      "hares": [
+        [
+          5,
+          2
+        ],
+        [
+          3,
+          8
+        ]
+      ],
+      "distances": [
+        7,
+        5
       ],
       "obstacles": [
         [
@@ -3271,260 +2973,14 @@ var MapsForStagHunt = {
           8,
           0
         ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "left",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          8,
-          7
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 5,
-        "red_to_hare": 7,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ],
-  "16": [
-    {
-      "map_id": 16,
-      "source_map_id": "M16",
-      "map_set": "variable-distance-16-v1",
-      "grid_size": 9,
-      "coordinate_system": "0-indexed (row, col)",
-      "rotation_degrees": 270,
-      "ascii": [
-        "#..r....R",
-        ".###.###.",
-        ".###.###.",
-        ".###.###.",
-        "....S....",
-        ".###.###.",
-        ".###.r##.",
-        ".###.###.",
-        "O.......#"
-      ],
-      "orange": [
-        8,
-        0
-      ],
-      "red": [
-        0,
-        8
-      ],
-      "stag": [
-        4,
-        4
-      ],
-      "rabbits": [
-        [
-          6,
-          5
-        ],
-        [
-          0,
-          3
-        ]
-      ],
-      "obstacles": [
-        [
-          0,
-          0
-        ],
-        [
-          1,
-          1
-        ],
-        [
-          1,
-          2
-        ],
-        [
-          1,
-          3
-        ],
-        [
-          1,
-          5
-        ],
-        [
-          1,
-          6
-        ],
-        [
-          1,
-          7
-        ],
-        [
-          2,
-          1
-        ],
-        [
-          2,
-          2
-        ],
-        [
-          2,
-          3
-        ],
-        [
-          2,
-          5
-        ],
-        [
-          2,
-          6
-        ],
-        [
-          2,
-          7
-        ],
-        [
-          3,
-          1
-        ],
-        [
-          3,
-          2
-        ],
-        [
-          3,
-          3
-        ],
-        [
-          3,
-          5
-        ],
-        [
-          3,
-          6
-        ],
-        [
-          3,
-          7
-        ],
-        [
-          5,
-          1
-        ],
-        [
-          5,
-          2
-        ],
-        [
-          5,
-          3
-        ],
-        [
-          5,
-          5
-        ],
-        [
-          5,
-          6
-        ],
-        [
-          5,
-          7
-        ],
-        [
-          6,
-          1
-        ],
-        [
-          6,
-          2
-        ],
-        [
-          6,
-          3
-        ],
-        [
-          6,
-          6
-        ],
-        [
-          6,
-          7
-        ],
-        [
-          7,
-          1
-        ],
-        [
-          7,
-          2
-        ],
-        [
-          7,
-          3
-        ],
-        [
-          7,
-          5
-        ],
-        [
-          7,
-          6
-        ],
-        [
-          7,
-          7
-        ],
-        [
-          8,
-          8
-        ]
-      ],
-      "signaling": {
-        "path_type": "equal-optimal",
-        "both_players_can_signal": true,
-        "indicate_action": "up",
-        "indicate_step_count": 1,
-        "indicate_position": [
-          7,
-          0
-        ]
-      },
-      "distance_summary": {
-        "orange_to_hare": 7,
-        "red_to_hare": 5,
-        "orange_to_stag": 8,
-        "red_to_stag": 8
-      },
-      "utility_summary": {
-        "step_cost_per_move": -0.9,
-        "hare_reward_each": 1,
-        "stag_reward_each": 5,
-        "gamma": 0.9,
-        "temperature": 0.2,
-        "horizon": 60
-      },
-      "participant_rewards": {
-        "initial_points": 0,
-        "step_penalty": 0,
-        "hare": 1,
-        "stag": 5
-      }
-    }
-  ]
-};
+      ]
+    },
+    "openingProbabilities": [
+      0,
+      0.5,
+      0,
+      0.5
+    ],
+    "value": -5.946918119999999
+  }
+]
