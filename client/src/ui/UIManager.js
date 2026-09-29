@@ -322,19 +322,32 @@ export class UIManager {
     const gameTitle = document.getElementById('game-title');
     const trialInfo = document.getElementById('trial-info');
 
+    // Stag Hunt uses its own per-phase "game" numbering (see
+    // GameConfigUtils.getStagHuntGameRoundInfo) rather than the generic
+    // experimentIndex/order-length scheme below.
+    const stagHuntInfo = GameConfigUtils.isStagHuntExperiment(experimentType)
+      ? GameConfigUtils.getStagHuntGameRoundInfo(trialIndex)
+      : null;
+
     if (gameTitle) {
-      const totalRounds = GameConfigUtils.getNumTrials(experimentType) || '';
-      const totalGames = CONFIG?.game?.experiments?.order?.length || '';
-      const gameLabel = totalGames
-        ? `Game ${experimentIndex + 1}/${totalGames}`
-        : `Game ${experimentIndex + 1}`;
-      gameTitle.textContent = totalRounds
-        ? `${gameLabel}: Round ${trialIndex + 1}/${totalRounds}`
-        : gameLabel;
+      if (stagHuntInfo) {
+        gameTitle.textContent = `Game ${stagHuntInfo.gameNumber}/${stagHuntInfo.totalGames}: Round ${stagHuntInfo.roundInGame}/${stagHuntInfo.totalRoundsInGame}`;
+      } else {
+        const totalRounds = GameConfigUtils.getNumTrials(experimentType) || '';
+        const totalGames = CONFIG?.game?.experiments?.order?.length || '';
+        const gameLabel = totalGames
+          ? `Game ${experimentIndex + 1}/${totalGames}`
+          : `Game ${experimentIndex + 1}`;
+        gameTitle.textContent = totalRounds
+          ? `${gameLabel}: Round ${trialIndex + 1}/${totalRounds}`
+          : gameLabel;
+      }
     }
 
     if (trialInfo) {
-      trialInfo.textContent = `Round ${trialIndex + 1}`;
+      trialInfo.textContent = stagHuntInfo
+        ? `Round ${stagHuntInfo.roundInGame}`
+        : `Round ${trialIndex + 1}`;
     }
   }
 
@@ -544,11 +557,11 @@ export class UIManager {
     } else if (messageType === 'collaboration') {
       message = success ? 'Collaboration succeeded!' : 'Collaboration failed!';
     } else if (messageType === 'stag-hunt-both-stag') {
-      message = 'You both caught the stag!';
+      message = 'You made a layer of cupcakes!';
     } else if (messageType === 'stag-hunt-human-rabbit') {
-      message = 'You caught a rabbit.';
+      message = 'You made a cupcake!';
     } else if (messageType === 'stag-hunt-human-nothing') {
-      message = 'No catch this round.';
+      message = 'Nothing added this round.';
     }
 
     // Create overlay div positioned absolutely over the canvas

@@ -126,6 +126,13 @@ export class TimelineManager {
 
       console.log(`📋 Adding stages for experiment: ${experimentType}`);
 
+      // Stag Hunt runs its own custom 5-phase study structure (see
+      // addStagHuntPhasedStages) instead of the generic per-type flow below.
+      if (experimentType === 'StagHunt') {
+        this.addStagHuntPhasedStages(experimentType, expIndex);
+        continue;
+      }
+
       // Instructions for this experiment
       this.stages.push({
         type: 'instructions',
@@ -142,6 +149,18 @@ export class TimelineManager {
           experimentType: experimentType,
           experimentIndex: expIndex,
           handler: () => this.showComprehensionCheckStage(experimentType, expIndex)
+        });
+      }
+
+      // For Stag Hunt Two Stags (StagHunt itself uses addStagHuntPhasedStages
+      // above), insert a cupcake-themed comprehension check right after the
+      // instructions, before round 1 (the first fixation/trial) begins.
+      if (experimentType === 'StagHuntTwoStags') {
+        this.stages.push({
+          type: 'comprehension_check',
+          experimentType: experimentType,
+          experimentIndex: expIndex,
+          handler: () => this.showCupcakeComprehensionCheckStage(experimentType, expIndex)
         });
       }
 
@@ -226,7 +245,9 @@ export class TimelineManager {
   /**
    * Add trial stages: fixation -> trial -> post-trial feedback
    */
-  addTrialStages(experimentType, experimentIndex, trialIndex) {
+  addTrialStages(experimentType, experimentIndex, trialIndex, options = {}) {
+    const { fullTitle = null } = options;
+
     // Fixation screen
     this.stages.push({
       type: 'fixation',
@@ -242,7 +263,7 @@ export class TimelineManager {
       experimentType: experimentType,
       experimentIndex: experimentIndex,
       trialIndex: trialIndex,
-      handler: () => this.runTrialStage(experimentType, experimentIndex, trialIndex)
+      handler: () => this.runTrialStage(experimentType, experimentIndex, trialIndex, fullTitle)
     });
 
     // Post-trial feedback
@@ -251,7 +272,7 @@ export class TimelineManager {
       experimentType: experimentType,
       experimentIndex: experimentIndex,
       trialIndex: trialIndex,
-      handler: () => this.showPostTrialStage(experimentType, experimentIndex, trialIndex)
+      handler: () => this.showPostTrialStage(experimentType, experimentIndex, trialIndex, fullTitle)
     });
   }
 
@@ -264,6 +285,74 @@ export class TimelineManager {
 
     // Add initial trial stages - more will be added dynamically based on performance
     this.addTrialStages(experimentType, experimentIndex, 0);
+  }
+
+  /**
+   * Custom 5-phase study structure for Stag Hunt:
+   *   Phase 1: instructions (video 1) -> 1 practice round
+   *   Phase 2: partner intro (video 2) -> matchmaking -> 4 rounds (1st is practice)
+   *   Phase 3: comprehension check
+   *   Phase 4: 16 rounds
+   *   Phase 5: questionnaire (added by the caller, after all experiments)
+   * Trial indices run continuously (0-20) across all three trial blocks so map
+   * sampling (keyed by experimentType + total trial count) stays consistent.
+   */
+  addStagHuntPhasedStages(experimentType, experimentIndex) {
+    const [PHASE1_ROUNDS, PHASE2_ROUNDS, PHASE4_ROUNDS] = CONFIG.game.experiments.stagHuntPhaseRounds;
+
+    let trialIndex = 0;
+    const addGameRounds = (numRounds) => {
+      for (let i = 0; i < numRounds; i++) {
+        const currentTrialIndex = trialIndex++;
+        const fullTitle = GameConfigUtils.getStagHuntGameRoundTitle(currentTrialIndex);
+        this.addTrialStages(experimentType, experimentIndex, currentTrialIndex, { fullTitle });
+      }
+    };
+
+    // --- Game 1 (Phase 1): orientation video (welcome_info, already queued) + rules text ---
+    this.stages.push({
+      type: 'instructions',
+      experimentType,
+      experimentIndex,
+      handler: () => this.showInstructionsStage(experimentType, experimentIndex)
+    });
+    addGameRounds(PHASE1_ROUNDS);
+
+    // --- Game 2 (Phase 2): partner intro (video 2) -> matchmaking -> rounds ---
+    this.stages.push({
+      type: 'instructions',
+      experimentType: 'StagHunt_partner_intro',
+      experimentIndex,
+      handler: () => this.showInstructionsStage('StagHunt_partner_intro', experimentIndex)
+    });
+
+    this.stages.push({
+      type: 'waiting_for_partner',
+      experimentType,
+      experimentIndex,
+      handler: () => this.showWaitingForPartnerStage(experimentType, experimentIndex)
+    });
+    this.stages.push({
+      type: 'match_play',
+      experimentType,
+      experimentIndex,
+      showPartnerFoundMessage: true,
+      handler: () => this.showMatchPlayStage(experimentType, experimentIndex)
+    });
+    this.hasShownPartnerFindingStage = true;
+
+    addGameRounds(PHASE2_ROUNDS);
+
+    // --- Phase 3: comprehension check ---
+    this.stages.push({
+      type: 'comprehension_check',
+      experimentType,
+      experimentIndex,
+      handler: () => this.showCupcakeComprehensionCheckStage(experimentType, experimentIndex)
+    });
+
+    // --- Game 3 (Phase 4): remaining rounds ---
+    addGameRounds(PHASE4_ROUNDS);
   }
 
   /**
@@ -296,6 +385,15 @@ export class TimelineManager {
     const stage = this.stages[this.currentStageIndex];
     console.log(`🎬 Running stage ${this.currentStageIndex}: ${stage.type}`);
 
+    // The Stag Hunt cake/cupcake/cow overlay lives outside this.container
+    // (position: fixed on document.body), so it survives container rebuilds
+    // and would otherwise bleed into non-trial screens like instructions,
+    // matchmaking, or the comprehension check between trial blocks.
+    const TRIAL_STAGE_TYPES = new Set(['fixation', 'trial', 'post-trial']);
+    if (!TRIAL_STAGE_TYPES.has(stage.type)) {
+      this.emit('hide-cake-visualization', {});
+    }
+
     try {
       if (stage.type === 'questionnaire') {
         const gamesCompletedAt = new Date().toISOString();
@@ -303,6 +401,7 @@ export class TimelineManager {
         this.requestDataSaveCheckpoint('games_complete', {
           gamesCompletedAt: this.experimentData.gamesCompletedAt
         });
+        this.emit('show-questionnaire', {});
       }
       stage.handler();
     } catch (error) {
@@ -547,7 +646,7 @@ export class TimelineManager {
           <div style="display: flex; justify-content: center; align-items: stretch; gap: 24px; flex-wrap: wrap; margin: 0 auto;">
             <div style="flex: 1 1 640px; min-width: 0; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 18px; text-align: center;">
               <h3 style="color: #1f2937; margin: 0 0 16px; font-size: 22px; line-height: 1.3;">
-                <span style="display: block;">Hungry travelers need to reach restaurants</span>
+                <span style="display: block;">Chefs need to reach the kitchen</span>
                 <span style="display: block;">as quickly as possible!</span>
               </h3>
               <div style="display: flex; justify-content: center; align-items: center; gap: 22px; flex-wrap: wrap;">
@@ -563,8 +662,8 @@ export class TimelineManager {
                     }).join('')}
                   </div>
                   <div style="display: flex; flex-direction: column; gap: 10px; font-size: 18px; color: #333; text-align: left;">
-                    <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 20px; height: 20px; background: red; border-radius: 50%;"></div><span>Traveler</span></div>
-                    <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 20px; height: 20px; background: #007bff; border-radius: 4px;"></div><span>Restaurant</span></div>
+                    <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 20px; height: 20px; background: red; border-radius: 50%;"></div><span>Chef</span></div>
+                    <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 20px; height: 20px; background: #007bff; border-radius: 4px;"></div><span>Kitchen</span></div>
                   </div>
                 </div>
 
@@ -586,7 +685,7 @@ export class TimelineManager {
                       <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&darr;</div>
                       <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&rarr;</div>
                     </div>
-                    <div style="grid-column: 2; grid-row: 3; color: #475467; font-size: 15px; text-align: center;">move your traveler</div>
+                    <div style="grid-column: 2; grid-row: 3; color: #475467; font-size: 15px; text-align: center;">move your chef</div>
                   </div>
                 </div>
               </div>
@@ -691,53 +790,45 @@ export class TimelineManager {
 
     this.container.innerHTML = instructions.html;
 
-    // For Game 1, Game 2, Game 3 and Game 4 instruction videos:
+    // For any instructions screen that embeds a <video> (Game 1-4, or the Stag
+    // Hunt partner-intro screen):
     // - First try to autoplay WITH sound (by this point the child has already interacted with the page)
     // - If the browser blocks that, fall back to muted autoplay and enable sound on first interaction
-    let instructionVideo = null;
-    if (experimentType === '1P1G' || experimentType === '1P2G' || experimentType === '2P2G' || experimentType === '2P3G') {
-      instructionVideo =
-        document.getElementById('game1Video') ||
-        document.getElementById('game2Video') ||
-        document.getElementById('game3Video') ||
-        document.getElementById('game4Video') ||
-        this.container.querySelector('video');
+    let instructionVideo = this.container.querySelector('video');
+    if (instructionVideo) {
+      instructionVideo.autoplay = true;
+      instructionVideo.playsInline = true;
 
-      if (instructionVideo) {
-        instructionVideo.autoplay = true;
-        instructionVideo.playsInline = true;
+      const tryPlayWithSound = () => {
+        instructionVideo.muted = false;
+        instructionVideo.volume = 1;
+        return instructionVideo.play();
+      };
 
-        const tryPlayWithSound = () => {
+      tryPlayWithSound().catch((err) => {
+        console.warn('Unable to autoplay instruction video with sound, falling back to muted:', err);
+
+        // Fallback: muted autoplay + enable sound on first interaction
+        instructionVideo.muted = true;
+        instructionVideo.play().catch((err2) => {
+          console.warn('Unable to autoplay muted instruction video:', err2);
+        });
+
+        const enableSoundOnFirstInteraction = () => {
           instructionVideo.muted = false;
           instructionVideo.volume = 1;
-          return instructionVideo.play();
+          instructionVideo.play().catch((err3) => {
+            console.warn('Unable to start instruction video with sound after interaction:', err3);
+          });
+          document.removeEventListener('click', enableSoundOnFirstInteraction);
+          document.removeEventListener('keydown', enableSoundOnFirstInteraction);
+          instructionVideo.removeEventListener('click', enableSoundOnFirstInteraction);
         };
 
-        tryPlayWithSound().catch((err) => {
-          console.warn('Unable to autoplay instruction video with sound, falling back to muted:', err);
-
-          // Fallback: muted autoplay + enable sound on first interaction
-          instructionVideo.muted = true;
-          instructionVideo.play().catch((err2) => {
-            console.warn('Unable to autoplay muted instruction video:', err2);
-          });
-
-          const enableSoundOnFirstInteraction = () => {
-            instructionVideo.muted = false;
-            instructionVideo.volume = 1;
-            instructionVideo.play().catch((err3) => {
-              console.warn('Unable to start instruction video with sound after interaction:', err3);
-            });
-            document.removeEventListener('click', enableSoundOnFirstInteraction);
-            document.removeEventListener('keydown', enableSoundOnFirstInteraction);
-            instructionVideo.removeEventListener('click', enableSoundOnFirstInteraction);
-          };
-
-          document.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
-          document.addEventListener('keydown', enableSoundOnFirstInteraction, { once: true });
-          instructionVideo.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
-        });
-      }
+        document.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
+        document.addEventListener('keydown', enableSoundOnFirstInteraction, { once: true });
+        instructionVideo.addEventListener('click', enableSoundOnFirstInteraction, { once: true });
+      });
     }
 
     const instructionContinuePanel = document.getElementById('instructionContinuePanel');
@@ -917,6 +1008,218 @@ export class TimelineManager {
 
     // Initial render
     renderComprehensionCheck(false);
+  }
+
+  /**
+   * Cupcake-themed comprehension check for the Stag Hunt games, shown right after
+   * instructions and before round 1. Two multiple-choice questions, answered in
+   * sequence; an incorrect answer re-shows the same question with an error message
+   * until the participant picks correctly. Results are recorded on experimentData
+   * so they end up in the saved experiment data (see GameApplication.saveExperimentData).
+   */
+  // Speaks a short line aloud via the browser's built-in speech synthesis.
+  speak(text) {
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (!synth || !text) return;
+    try {
+      synth.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      synth.speak(utterance);
+    } catch (err) {
+      console.warn('Unable to speak comprehension check text:', err);
+    }
+  }
+
+  showCupcakeComprehensionCheckStage(experimentType, experimentIndex) {
+    // Same visual format as the post-game questionnaire (showQuestionnaireStage):
+    // image-option buttons, click or arrow-keys+Space to answer. Comprehension
+    // checks additionally require a correct answer before advancing.
+    const questions = [
+      {
+        name: 'big_kitchen_cupcakes',
+        prompt: 'How many cupcakes can you make in the big kitchen?',
+        options: ['1 cupcake', '5 cupcakes'],
+        // Render the same cupcake image repeated per option so each cupcake is
+        // the same size in both choices, rather than scaling one flat picture.
+        optionImages: ['cupcake-one.png', 'cupcake-one.png'],
+        optionImageCounts: [1, 5],
+        correctIndex: 1
+      },
+      {
+        name: 'big_kitchen_alone_or_together',
+        prompt: 'For the big kitchen: can you do it alone, or do you have to be together?',
+        options: ['Alone', 'Together'],
+        // Fixed by HEIGHT (not width): together.png is wider since it shows two
+        // chef-dots side by side, so sizing by width would shrink each dot.
+        optionImages: ['alone.png', 'together.png'],
+        optionImageHeight: 130,
+        correctIndex: 1
+      },
+      {
+        name: 'small_kitchen_cupcakes',
+        prompt: 'How many cupcakes can you make in the small kitchen?',
+        options: ['1 cupcake', '5 cupcakes'],
+        optionImages: ['cupcake-one.png', 'cupcake-one.png'],
+        optionImageCounts: [1, 5],
+        correctIndex: 0
+      },
+      {
+        name: 'small_kitchen_alone_or_together',
+        prompt: 'For the small kitchen: can you do it alone, or do you have to be together?',
+        options: ['Alone', 'Together'],
+        optionImages: ['alone.png', 'together.png'],
+        optionImageHeight: 130,
+        correctIndex: 0
+      }
+    ];
+
+    const results = [];
+    let qIndex = 0;
+    let selIndex = 0;
+
+    const finish = () => {
+      document.removeEventListener('keydown', handleKeys);
+      this.experimentData.comprehensionCheck = {
+        experimentType,
+        questions: results,
+        completedAt: new Date().toISOString()
+      };
+      this.requestDataSaveCheckpoint('comprehension_check_complete', {
+        comprehensionCheck: this.experimentData.comprehensionCheck
+      });
+      console.log('✅ Cupcake comprehension check passed. Continuing to Stag Hunt.');
+      this.nextStage();
+    };
+
+    const selectOption = (idx) => {
+      const q = questions[qIndex];
+      selIndex = idx;
+      const correct = idx === q.correctIndex;
+
+      const attemptRecord = results[qIndex] || { name: q.name, attempts: 0, firstAttemptCorrect: null };
+      attemptRecord.attempts += 1;
+      if (attemptRecord.firstAttemptCorrect === null) {
+        attemptRecord.firstAttemptCorrect = correct;
+      }
+      results[qIndex] = attemptRecord;
+
+      if (!correct) {
+        renderQuestion(true);
+        return;
+      }
+
+      attemptRecord.finalAnswer = q.options[idx];
+
+      if (qIndex < questions.length - 1) {
+        qIndex += 1;
+        selIndex = 0;
+        renderQuestion(false);
+      } else {
+        finish();
+      }
+    };
+
+    const renderQuestion = (showError = false) => {
+      const q = questions[qIndex];
+      const images = q.optionImages || [];
+
+      const imageCounts = q.optionImageCounts || [];
+      // Fixed per-image size so every rendered item is the same size. Fix by
+      // WIDTH by default (fine when all images share similar aspect ratios),
+      // or by HEIGHT (optionImageHeight) when option images differ in width
+      // because they show different counts of the same-sized icon side by
+      // side (e.g. one chef-dot vs two) - fixing width there would shrink
+      // the individual icons in the wider image.
+      const ITEM_WIDTH = q.optionImageSize || 70;
+      const ITEM_HEIGHT = q.optionImageHeight || null;
+      const itemSizeStyle = ITEM_HEIGHT
+        ? `height: ${ITEM_HEIGHT}px; width: auto;`
+        : `width: ${ITEM_WIDTH}px; height: auto;`;
+
+      const optionsHtml = q.options.map((opt, idx) => {
+        const isSelected = idx === selIndex;
+        const borderColor = isSelected ? '#4f46e5' : '#e5e7eb';
+        const bgColor = isSelected ? '#eef2ff' : '#ffffff';
+        const src = images[idx] ? this.assetUrl(images[idx]) : '';
+        const count = Math.max(1, imageCounts[idx] || 1);
+        const itemsHtml = src
+          ? Array.from({ length: count }, () =>
+              `<img src="${src}" alt="" style="${itemSizeStyle} display: block; object-fit: contain;" />`
+            ).join('')
+          : '';
+        return `
+          <button type="button" class="comprehension-option" data-idx="${idx}" aria-label="${opt.replace(/"/g, '&quot;')}" style="
+            width: min(260px, 46vw);
+            padding: 12px 16px;
+            margin: 8px 12px;
+            border-radius: 16px;
+            border: 3px solid ${borderColor};
+            background: ${bgColor};
+            cursor: pointer;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+          ">
+            ${src
+              ? `<div style="width: 100%; height: 240px; display: flex; flex-wrap: wrap; align-content: center; align-items: center; justify-content: center; gap: 6px;">${itemsHtml}</div>
+                 <span style="margin-top: 10px; font-size: 18px; font-weight: 600; color: #333;">${opt}</span>`
+              : `<span style="font-size: 18px; color: #333;">${opt}</span>`}
+          </button>`;
+      }).join('');
+
+      this.container.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:center; min-height:100vh; background:#f8f9fa; padding:20px;">
+          <div style="background:white; padding:32px; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); width:100%; max-width:720px;">
+            ${showError ? '<p style="text-align:center; color:#b91c1c; font-weight:700; margin:0 0 8px;">Not quite, try again!</p>' : ''}
+            <h2 style="text-align:center; margin:8px 0 20px; color:#111827;">${q.prompt}</h2>
+            <div style="margin-bottom:16px; text-align:center; color:#6b7280;">
+              Click an image to answer (or use arrow keys and Space).
+            </div>
+            <div id="options" style="display:flex; flex-direction:row; flex-wrap:wrap; justify-content:center; align-items:center;">${optionsHtml}</div>
+          </div>
+        </div>`;
+
+      // Read the question aloud each time it's (re)shown.
+      this.speak(q.prompt);
+
+      this.container.querySelectorAll('.comprehension-option').forEach((btn) => {
+        const idx = Number(btn.getAttribute('data-idx') || '0');
+        btn.addEventListener('click', () => {
+          selectOption(idx);
+        });
+        // Read the answer choice aloud on hover.
+        btn.addEventListener('mouseenter', () => {
+          this.speak(q.options[idx]);
+        });
+      });
+    };
+
+    const handleKeys = (e) => {
+      const isPreviousKey =
+        e.code === 'ArrowUp' || e.key === 'ArrowUp' ||
+        e.code === 'ArrowLeft' || e.key === 'ArrowLeft';
+      const isNextKey =
+        e.code === 'ArrowDown' || e.key === 'ArrowDown' ||
+        e.code === 'ArrowRight' || e.key === 'ArrowRight';
+
+      if (isPreviousKey) {
+        e.preventDefault();
+        selIndex = Math.max(0, selIndex - 1);
+        renderQuestion(false);
+      } else if (isNextKey) {
+        e.preventDefault();
+        selIndex = Math.min(questions[qIndex].options.length - 1, selIndex + 1);
+        renderQuestion(false);
+      } else if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        selectOption(selIndex);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeys);
+    renderQuestion(false);
   }
 
   checkPartnerPresenceAndProceed(experimentType, experimentIndex) {
@@ -1344,7 +1647,7 @@ export class TimelineManager {
     this.currentFixationTimeout = timeoutId;
   }
 
-  runTrialStage(experimentType, experimentIndex, trialIndex) {
+  runTrialStage(experimentType, experimentIndex, trialIndex, fullTitle = null) {
     console.log(`🎮 Starting trial ${trialIndex} of ${experimentType}`);
 
     // Determine legend based on actual player index whenever it's a 2P experiment
@@ -1357,6 +1660,7 @@ export class TimelineManager {
     }
     const totalRounds = GameConfigUtils.getNumTrials(experimentType);
     const totalGames = CONFIG?.game?.experiments?.order?.length || 1;
+    const title = fullTitle || `Game ${experimentIndex + 1}/${totalGames}: Round ${trialIndex + 1}/${totalRounds}`;
 
     // Create trial container with game canvas area
     this.container.innerHTML = `
@@ -1366,7 +1670,7 @@ export class TimelineManager {
         style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 10px 16px 48px; overflow: hidden;"
       >
         <div style="text-align: center; max-width: 800px; width: 100%; display: flex; flex-direction: column; align-items: center;">
-          <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">Game ${experimentIndex + 1}/${totalGames}: Round ${trialIndex + 1}/${totalRounds}</h3>
+          <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">${title}</h3>
           <div id="game-canvas-container" style="margin: 0 auto; position: relative; display: flex; justify-content: center; width: 100%; max-width: 100%;">
             <!-- Game canvas will be inserted here by ExperimentManager -->
           </div>
@@ -1400,12 +1704,14 @@ export class TimelineManager {
     });
   }
 
-  showPostTrialStage(experimentType, experimentIndex, trialIndex) {
+  showPostTrialStage(experimentType, experimentIndex, trialIndex, fullTitle = null) {
     // Get the last trial result
     const trialResult = this.experimentData.experiments[experimentType]?.[trialIndex];
     const success = trialResult?.success || false;
     const totalRounds = GameConfigUtils.getNumTrials(experimentType);
     const totalGames = CONFIG?.game?.experiments?.order?.length || 1;
+    const gameLine = fullTitle || `Game ${experimentIndex + 1}/${totalGames}`;
+    const roundLine = fullTitle ? 'Results' : `Round ${trialIndex + 1}/${totalRounds} Results`;
 
     // Instead of creating a new page, show feedback as overlay on the current game canvas
     // Find the existing game canvas container
@@ -1424,8 +1730,8 @@ export class TimelineManager {
       this.container.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
           <div style="text-align: center; max-width: 600px; width: 100%;">
-            <h3 style="margin-bottom: 10px;">Game ${experimentIndex + 1}/${totalGames}</h3>
-            <h4 style="margin-bottom: 20px;">Round ${trialIndex + 1}/${totalRounds} Results</h4>
+            <h3 style="margin-bottom: 10px;">${gameLine}</h3>
+            <h4 style="margin-bottom: 20px;">${roundLine}</h4>
             <div id="feedbackCanvasContainer" style="margin: 0 auto 20px auto; position: relative; display: flex; justify-content: center;"></div>
           </div>
         </div>
@@ -2096,8 +2402,8 @@ export class TimelineManager {
     const game1TitleColor =
       CONFIG?.game?.studyRLCondition === 'individual' ? '#2563eb' : '#dc2626';
 
-    const travelerDot = '<span style="display:inline-block;width:20px;height:20px;background:red;border-radius:50%;vertical-align:middle;margin:0 4px;"></span>';
-    const restaurantBox = '<span style="display:inline-block;width:20px;height:20px;background:#007bff;border-radius:3px;vertical-align:middle;margin:0 4px;"></span>';
+    const chefDot = '<span style="display:inline-block;width:20px;height:20px;background:red;border-radius:50%;vertical-align:middle;margin:0 4px;"></span>';
+    const kitchenBox = '<span style="display:inline-block;width:20px;height:20px;background:#007bff;border-radius:3px;vertical-align:middle;margin:0 4px;"></span>';
     const renderInstructionList = (items) => `
       <ul style="font-size: 22px; color: #1f2937; margin: 0; line-height: 1.55; text-align: left; padding-left: 24px;">
         ${items.map(item => `<li style="margin-bottom: 10px;">${item}</li>`).join('')}
@@ -2106,7 +2412,7 @@ export class TimelineManager {
     const renderVideoInstruction = ({
       title,
       titleColor = '#333',
-      subtitle,
+      subtitle = '',
       intro = '',
       items,
       videoId,
@@ -2116,7 +2422,7 @@ export class TimelineManager {
         <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 24px;">
           <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: calc(100% - 24px); max-width: 1120px; text-align: center;">
             <h2 style="color: ${titleColor}; margin: 0 0 12px; font-size: 36px;">${title}</h2>
-            <h3 style="color: #000; margin: 0 0 22px; font-size: 24px;">${subtitle}</h3>
+            ${subtitle ? `<h3 style="color: #000; margin: 0 0 22px; font-size: 24px;">${subtitle}</h3>` : ''}
 
             <div style="display: flex; justify-content: center; align-items: stretch; gap: 24px; flex-wrap: wrap;">
               <div style="flex: 1 1 420px; min-width: 300px; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 28px; display: flex; flex-direction: column; justify-content: center;">
@@ -2159,9 +2465,9 @@ export class TimelineManager {
         videoId: 'game1Video',
         videoSrc: 'game1.mp4',
         items: [
-          `You are the traveler ${travelerDot}.`,
-          `There is one restaurant ${restaurantBox} on the map.`,
-          'Use the arrow keys to reach the restaurant.'
+          `You are the chef ${chefDot}.`,
+          `There is one kitchen ${kitchenBox} on the map.`,
+          'Use the arrow keys to reach the kitchen.'
         ]
       }),
       '1P2G': renderVideoInstruction({
@@ -2169,10 +2475,10 @@ export class TimelineManager {
         subtitle: 'Great job!',
         videoId: 'game2Video',
         videoSrc: 'game2.mp4',
-        intro: 'Now there will be several identical restaurants on the map.',
+        intro: 'Now there will be several identical kitchens on the map.',
         items: [
-          'Each round, you can win by getting to one of the restaurants.',
-          'Some restaurants are open when the round starts. Others may appear later.'
+          'Each round, you can win by getting to one of the kitchens.',
+          'Some kitchens are open when the round starts. Others may appear later.'
         ]
       }),
       '2P2G': renderVideoInstruction({
@@ -2182,8 +2488,8 @@ export class TimelineManager {
         videoSrc: 'game3.mp4',
         intro: 'In this game, you will work with a teammate.',
         items: [
-          'Each round, you win if both players go to the same restaurant.',
-          'You lose the round if you end up at different restaurants.',
+          'Each round, you win if both players go to the same kitchen.',
+          'You lose the round if you end up at different kitchens.',
           'Both players move one step at a time after both players choose a direction.'
         ]
       }),
@@ -2194,27 +2500,21 @@ export class TimelineManager {
         videoSrc: 'video2.mp4',
         intro: 'Now you will work with the same teammate again.',
         items: [
-          'Each round, you win if both players go to the same restaurant.',
-          'You lose the round if you end up at different restaurants.',
-          'Some restaurants are open when the round starts. Others may appear later.'
+          'Each round, you win if both players go to the same kitchen.',
+          'You lose the round if you end up at different kitchens.',
+          'Some kitchens are open when the round starts. Others may appear later.'
         ]
       }),
-      'StagHunt': {
-        html: `
-          <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 24px;">
-            <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 820px; text-align: center;">
-              <h2 style="color: #333; margin-bottom: 24px;">Stag Hunt</h2>
-              <ul style="font-size: 22px; color: #1f2937; margin: 0 auto 26px; line-height: 1.55; text-align: left; max-width: 680px;">
-                <li style="margin-bottom: 10px;">You are the red player. Your partner is the purple player.</li>
-                <li style="margin-bottom: 10px;">Small blue squares can be collected alone.</li>
-                <li style="margin-bottom: 10px;">The large blue square pays more, but only if both players reach it.</li>
-                <li style="margin-bottom: 10px;">Dark squares are blocked.</li>
-              </ul>
-              <p style="font-size: 20px; margin-top: 30px;">Press <strong>space bar</strong> to begin.</p>
-            </div>
-          </div>
-        `
-      },
+      'StagHunt': renderVideoInstruction({
+        title: 'Stag Hunt',
+        videoId: 'staghuntRulesVideo',
+        videoSrc: 'video2-staghunt.mp4',
+        items: [
+          'You are the red chef.',
+          'You can go to the small kitchen alone to bake a cupcake.',
+          'Dark squares are kitchen counters and you cannot move through them.'
+        ]
+      }),
       'StagHuntTwoStags': {
         html: `
           <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 24px;">
@@ -2225,7 +2525,18 @@ export class TimelineManager {
             </div>
           </div>
         `
-      }
+      },
+      // Phase 2 intro: shown right before the participant is matched with their
+      // partner, introducing the second video and the practice-with-partner round.
+      'StagHunt_partner_intro': renderVideoInstruction({
+        title: 'Stag Hunt',
+        videoId: 'staghuntPartnerVideo',
+        videoSrc: 'video3-partnerintro.mp4',
+        items: [
+          'To make one cupcake for Chef Cowlie, you can go to the small kitchen to cook by yourself.',
+          'To make 5 cupcakes for Chef Cowlie’s cupcake tower, you have to go with your partner to the big kitchen to cook together.'
+        ]
+      })
     };
 
     return instructions[experimentType] || {

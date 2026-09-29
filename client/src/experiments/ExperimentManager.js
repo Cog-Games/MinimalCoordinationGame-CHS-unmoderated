@@ -7,12 +7,15 @@ import { GameHelpers } from '../utils/GameHelpers.js';
 import { NewGoalGenerator } from '../utils/NewGoalGenerator.js';
 import { mapLoader } from '../utils/MapLoader.js';
 import { MapParser } from '../utils/MapParser.js';
+import { CakeVisualization } from '../ui/CakeVisualization.js';
 
 export class ExperimentManager {
   constructor(gameStateManager, uiManager, timelineManager = null) {
     this.gameStateManager = gameStateManager;
     this.uiManager = uiManager;
     this.timelineManager = timelineManager;
+    this.cakeVisualization = new CakeVisualization();
+    this.lastCakeTrialIndex = null;
     this.rlAgent = new RLAgent();
     this.gptClient = new GptAgentClient();
     this.weIntentAgent = new WeIntentAgent();
@@ -1235,6 +1238,18 @@ export class ExperimentManager {
       this.handleTrialFeedback(data);
     });
 
+    this.timelineManager.on('show-questionnaire', () => {
+      this.cakeVisualization.hide();
+    });
+
+    // Hide the cake/cupcake/cow overlay whenever the timeline enters any
+    // non-trial stage (instructions, matchmaking, comprehension check, etc.),
+    // since it lives outside the timeline's container and would otherwise
+    // bleed through between Stag Hunt's trial blocks.
+    this.timelineManager.on('hide-cake-visualization', () => {
+      this.cakeVisualization.hide();
+    });
+
     // Handle AI fallback activation from timeline
     this.timelineManager.on('ai-fallback-activated', (data) => {
       try { if (!CONFIG?.debug?.disableConsoleLogs) console.log('[DEBUG] ExperimentManager received ai-fallback-activated event:', data); } catch (_) {}
@@ -1309,6 +1324,13 @@ export class ExperimentManager {
       }
 
       this.uiManager.updateGameDisplay(this.gameStateManager.getCurrentState());
+
+      if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
+        if (GameConfigUtils.getStagHuntPhaseStartTrialIndices().includes(trialIndex)) {
+          this.cakeVisualization.reset();
+        }
+        this.cakeVisualization.show();
+      }
 
       // Start trial execution
       this.startTimelineTrialExecution(experimentType);
@@ -1436,6 +1458,11 @@ export class ExperimentManager {
     let messageType;
 
     if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
+      if (GameConfigUtils.getStagHuntPhaseStartTrialIndices().includes(trialIndex) && this.lastCakeTrialIndex !== trialIndex) {
+        this.cakeVisualization.reset();
+        this.cakeVisualization.show();
+      }
+
       const td = this.gameStateManager.getCurrentTrialData();
       const goalTypes = this.gameStateManager.getCurrentState()?.currentGoalTypes || [];
       const humanIdx = td?.humanPlayerIndex ?? 0;       // 0 = player1, 1 = player2
@@ -1462,8 +1489,13 @@ export class ExperimentManager {
       } else {
         messageType = 'stag-hunt-human-nothing';
       }
+      if (this.lastCakeTrialIndex !== trialIndex) {
+        this.cakeVisualization.applyOutcome(messageType);
+        this.lastCakeTrialIndex = trialIndex;
+      }
     } else {
       messageType = experimentType.startsWith('1P') ? 'single' : 'collaboration';
+      this.cakeVisualization.hide();
     }
 
     this.uiManager.showTrialFeedbackInContainer(success, canvasContainer, messageType);

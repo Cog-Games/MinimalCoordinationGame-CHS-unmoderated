@@ -113,9 +113,15 @@ export const CONFIG = {
         '1P2G': 12,
         '2P2G': 8,
         '2P3G': 12,
-        'StagHunt': 18,
+        // 1 (Phase 1 practice) + 4 (Phase 2, incl. 1 practice) + 16 (Phase 4) = 21
+        'StagHunt': 21,
         'StagHuntTwoStags': 4
       },
+
+      // Stag Hunt's rounds-per-phase, in order (Phase 1, Phase 2, Phase 4 -
+      // Phase 3 is the comprehension check, no trials). Each phase's cake
+      // tower resets at its first trial. Sum must equal numTrials.StagHunt.
+      stagHuntPhaseRounds: [1, 4, 16],
 
       // 'fixed' keeps the 18 Stag Hunt maps in numeric order for development.
       mapOrder: {
@@ -218,7 +224,7 @@ export const CONFIG = {
       background: '#ffffff',
       grid: '#cccccc',
       player1: '#ff0000',
-      player2: '#ff8800',
+      player2: '#8000ff',
       goal: '#0066ff',
       obstacle: '#333333'
     }
@@ -469,6 +475,49 @@ export const GameConfigUtils = {
     const testTrialOverride = this.getTestTrialOverride();
     if (testTrialOverride) return testTrialOverride;
     return CONFIG.game.experiments.numTrials[experimentType] || 12;
+  },
+
+  // Trial indices (0-based) where each Stag Hunt phase begins, derived from
+  // stagHuntPhaseRounds (e.g. [1, 4, 16] -> [0, 1, 5]). The cake tower resets
+  // at each of these trial indices.
+  getStagHuntPhaseStartTrialIndices() {
+    const phaseRounds = CONFIG.game.experiments.stagHuntPhaseRounds || [];
+    const starts = [];
+    let cursor = 0;
+    for (const rounds of phaseRounds) {
+      starts.push(cursor);
+      cursor += rounds;
+    }
+    return starts;
+  },
+
+  // Maps a global Stag Hunt trial index to its per-phase "game" numbering,
+  // e.g. trialIndex 0 -> {gameNumber:1, totalGames:3, roundInGame:1, totalRoundsInGame:1},
+  // trialIndex 5 -> {gameNumber:3, totalGames:3, roundInGame:1, totalRoundsInGame:16}.
+  // Single source of truth shared by TimelineManager (trial titles) and
+  // UIManager (updateGameInfo), so they never disagree.
+  getStagHuntGameRoundInfo(trialIndex) {
+    const phaseRounds = CONFIG.game.experiments.stagHuntPhaseRounds || [];
+    let cursor = 0;
+    for (let i = 0; i < phaseRounds.length; i++) {
+      const rounds = phaseRounds[i];
+      if (trialIndex < cursor + rounds) {
+        return {
+          gameNumber: i + 1,
+          totalGames: phaseRounds.length,
+          roundInGame: trialIndex - cursor + 1,
+          totalRoundsInGame: rounds
+        };
+      }
+      cursor += rounds;
+    }
+    return null;
+  },
+
+  getStagHuntGameRoundTitle(trialIndex) {
+    const info = this.getStagHuntGameRoundInfo(trialIndex);
+    if (!info) return null;
+    return `Game ${info.gameNumber}/${info.totalGames}: Round ${info.roundInGame}/${info.totalRoundsInGame}`;
   },
 
   getMoveMode(experimentType) {

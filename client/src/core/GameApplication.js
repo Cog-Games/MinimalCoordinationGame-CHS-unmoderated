@@ -446,6 +446,7 @@ export class GameApplication {
         experimentOrder: (CONFIG?.game?.experiments?.order) || [],
         allTrialsData: gsData.allTrialsData || [],
         questionnaireData: data.questionnaire || null,
+        comprehensionCheckData: data.comprehensionCheck || null,
         participantDob: data.participantDob || null,
         participantAgeReferenceDate: data.participantAgeReferenceDate || null,
         participantAgeYears: data.participantAgeYears ?? null,
