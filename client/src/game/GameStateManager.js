@@ -682,11 +682,40 @@ export class GameStateManager {
     }
   }
 
+  // Goal-locked players perform an implicit legal stay. Active players must
+  // propose an orthogonal move into a walkable cell; missing input is not a stay.
+  isLegalSynchronizedDirection(playerNumber, direction) {
+    const state = this.currentState;
+    const position = playerNumber === 1 ? state?.player1 : state?.player2;
+    if (!position) return false;
+    if (GameHelpers.isGoalReached(position, state.currentGoals)) return true;
+    const movement = DIRECTIONS[`arrow${direction}`]?.movement;
+    if (!movement) return false;
+    const [r, c] = GameHelpers.transition(position, movement);
+    return r >= 0 && r < state.gridMatrix.length && c >= 0 &&
+      c < state.gridMatrix[r].length && state.gridMatrix[r][c] !== GAME_OBJECTS.obstacle;
+  }
+
+  validateSynchronizedDirections(player1Direction, player2Direction) {
+    if (!CONFIG.game.requireBothLegalMoves) return null;
+    const invalidPlayers = [1, 2].filter(n => !this.isLegalSynchronizedDirection(
+      n, n === 1 ? player1Direction : player2Direction
+    ));
+    if (invalidPlayers.length) return { success: false, reason: 'illegal_joint_move', invalidPlayers };
+    if ([this.currentState.player1, this.currentState.player2].every(p => GameHelpers.isGoalReached(p, this.currentState.currentGoals))) {
+      return { success: false, reason: 'all_players_locked' };
+    }
+    return null;
+  }
+
   // Apply human (player 1) and AI/GPT (player 2) moves in a single synchronized step
   processSynchronizedMoves(humanDirection, aiDirection) {
     if (this.isMoving) {
       return { success: false, reason: 'already_moving' };
     }
+
+    const rejection = this.validateSynchronizedDirections(humanDirection, aiDirection);
+    if (rejection) return rejection;
 
     this.isMoving = true;
 
@@ -749,58 +778,12 @@ export class GameStateManager {
 
   // Generalized synchronized move: specify which player is the human (1 or 2)
   processSynchronizedMovesMapped(humanPlayerNumber, humanDirection, aiDirection) {
-    if (this.isMoving) {
-      return { success: false, reason: 'already_moving' };
+    if (humanPlayerNumber !== 1 && humanPlayerNumber !== 2) {
+      return { success: false, reason: 'invalid_player' };
     }
-
-    this.isMoving = true;
-
-    try {
-      const results = { success: true, trialComplete: false };
-
-      const p1 = this.currentState.player1;
-      const p2 = this.currentState.player2;
-
-      const moveHuman = humanDirection ? DIRECTIONS[`arrow${humanDirection}`]?.movement : null;
-      const moveAI = aiDirection ? DIRECTIONS[`arrow${aiDirection}`]?.movement : null;
-
-      // Map to player1/player2 moves
-      const move1 = (humanPlayerNumber === 1) ? moveHuman : moveAI;
-      const move2 = (humanPlayerNumber === 2) ? moveHuman : moveAI;
-
-      const reactionTime = Date.now() - this.gameStartTime;
-
-      let next1 = p1;
-      if (p1 && move1 && !GameHelpers.isGoalReached(p1, this.currentState.currentGoals)) {
-        // Record as player1 move regardless of human/AI
-        this.recordPlayerMove(1, move1, reactionTime);
-        this.applyStepPenalty(1);
-        const real1 = GameHelpers.isValidMove(this.currentState.gridMatrix, p1, move1);
-        next1 = GameHelpers.transition(p1, real1);
-      }
-
-      let next2 = p2;
-      if (p2 && move2 && !GameHelpers.isGoalReached(p2, this.currentState.currentGoals)) {
-        this.recordPlayerMove(2, move2, reactionTime);
-        this.applyStepPenalty(2);
-        const real2 = GameHelpers.isValidMove(this.currentState.gridMatrix, p2, move2);
-        next2 = GameHelpers.transition(p2, real2);
-      }
-
-      if (p1 && next1 && (next1 !== p1)) this.updatePlayerPosition(1, p1, next1);
-      if (p2 && next2 && (next2 !== p2)) this.updatePlayerPosition(2, p2, next2);
-
-      if (p1 && move1) this.detectAndRecordGoals(1, move1);
-      if (p2 && move2) this.detectAndRecordGoals(2, move2);
-
-      // Increment step count once for the synchronized step (mapped variant)
-      this.stepCount++;
-
-      results.trialComplete = this.checkTrialCompletion();
-      return results;
-    } finally {
-      setTimeout(() => { this.isMoving = false; }, 100);
-    }
+    return humanPlayerNumber === 1
+      ? this.processSynchronizedMoves(humanDirection, aiDirection)
+      : this.processSynchronizedMoves(aiDirection, humanDirection);
   }
 
   updatePlayerPosition(playerIndex, oldPos, newPos) {

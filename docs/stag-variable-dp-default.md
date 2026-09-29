@@ -53,3 +53,19 @@ in the actual cake interface and displayed the cake reward.
 The repository's older `node test-integration.js` is not a clean validation:
 its MockUIManager lacks setupGameCanvasInContainer and produces asynchronous
 trial-start errors. That unrelated mock was left unchanged.
+
+## Atomic legal turns (default)
+
+`CONFIG.game.requireBothLegalMoves` defaults to true. Every active player must
+supply a valid orthogonal move within the board and outside walls. The entire
+synchronized turn is rejected if either active move is invalid or missing:
+positions, scores, trajectories and the turn counter remain unchanged.
+A player already locked at a goal supplies an implicit legal stay, so the
+remaining player can finish. The same validation applies with either human
+player assignment and to automatic AI turns after the human reaches a goal.
+Invalid human keys are filtered before requesting or sampling the AI; they
+cannot reroll the DP policy. Overlapping asynchronous decisions are gated.
+Setting the option to false explicitly restores the legacy permissive behavior.
+
+Run `npm run test:stag-legal-turns` for atomicity and controller regression tests.
+All additions, documentation and commit messages for this feature are English.

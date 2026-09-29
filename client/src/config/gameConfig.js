@@ -55,6 +55,8 @@ export const CONFIG = {
 
     // Two-player move mode. Stag Hunt uses simultaneous human + bot moves.
     moveMode: 'simultaneous',
+    // Reject the entire turn unless both active players propose legal moves.
+    requireBothLegalMoves: true,
     turnTaking: {
       startingPlayer: 1
     },

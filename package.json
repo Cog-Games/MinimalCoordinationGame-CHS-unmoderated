@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "render-build": "npm install && vite build",
-    "test:stag-dp": "node tests/stag-variable-dp.test.mjs"
+    "test:stag-dp": "node tests/stag-variable-dp.test.mjs",
+    "test:stag-legal-turns": "node tests/stag-legal-turns.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

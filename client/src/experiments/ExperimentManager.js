@@ -497,42 +497,52 @@ export class ExperimentManager {
     if (!gameState.player1 || !gameState.player2) return;
 
     const humanPlayerNumber = (this.aiPlayerNumber === 1) ? 2 : 1;
-    const { aiDirection, gptError } = await this.generateAIDirection(gameState);
-
-    if (!aiDirection && !this.rlAgent) return;
-
-    if (gptError && aiDirection) {
-      this.gameStateManager.recordGptErrorEvent({
-        phase: 'synchronized',
-        error: gptError?.message || String(gptError),
-        humanDirection,
-        fallback: 'rl',
-        fallbackDirection: aiDirection
-      });
-    }
-
-    let syncResult;
-    if (humanPlayerNumber === 1) {
-      syncResult = this.gameStateManager.processSynchronizedMoves(humanDirection, aiDirection);
-    } else {
-      syncResult = this.gameStateManager.processSynchronizedMovesMapped(2, humanDirection, aiDirection);
-    }
-
-    this.uiManager.updateGameDisplay(this.gameStateManager.getCurrentState());
-
+    // Ignore invalid human inputs before sampling the AI (no policy rerolls).
+    if (this.synchronizedDecisionPending || this.gameStateManager.isMoving) return;
+    if (CONFIG.game.requireBothLegalMoves &&
+        !this.gameStateManager.isLegalSynchronizedDirection(humanPlayerNumber, humanDirection)) return;
+    this.synchronizedDecisionPending = true;
     try {
-      const stateAfter = this.gameStateManager.getCurrentState();
-      const humanPos = (humanPlayerNumber === 1) ? stateAfter.player1 : stateAfter.player2;
-      const aiPos = (this.aiPlayerNumber === 1) ? stateAfter.player1 : stateAfter.player2;
-      const humanAtGoal = GameHelpers.isGoalReached(humanPos, stateAfter.currentGoals);
-      const aiAtGoal = GameHelpers.isGoalReached(aiPos, stateAfter.currentGoals);
-      if (humanAtGoal && !aiAtGoal && !this.aiMoveInterval) {
-        this.startIndependentAIMovement();
-      }
-    } catch (_) { /* noop */ }
+      const { aiDirection, gptError } = await this.generateAIDirection(gameState);
 
-    if (syncResult?.trialComplete) {
-      this.handleTrialComplete(syncResult);
+      if (!aiDirection && !this.rlAgent) return;
+
+      if (gptError && aiDirection) {
+        this.gameStateManager.recordGptErrorEvent({
+          phase: 'synchronized',
+          error: gptError?.message || String(gptError),
+          humanDirection,
+          fallback: 'rl',
+          fallbackDirection: aiDirection
+        });
+      }
+
+      let syncResult;
+      if (humanPlayerNumber === 1) {
+        syncResult = this.gameStateManager.processSynchronizedMoves(humanDirection, aiDirection);
+      } else {
+        syncResult = this.gameStateManager.processSynchronizedMovesMapped(2, humanDirection, aiDirection);
+      }
+
+      if (!syncResult?.success) return;
+      this.uiManager.updateGameDisplay(this.gameStateManager.getCurrentState());
+
+      try {
+        const stateAfter = this.gameStateManager.getCurrentState();
+        const humanPos = (humanPlayerNumber === 1) ? stateAfter.player1 : stateAfter.player2;
+        const aiPos = (this.aiPlayerNumber === 1) ? stateAfter.player1 : stateAfter.player2;
+        const humanAtGoal = GameHelpers.isGoalReached(humanPos, stateAfter.currentGoals);
+        const aiAtGoal = GameHelpers.isGoalReached(aiPos, stateAfter.currentGoals);
+        if (humanAtGoal && !aiAtGoal && !this.aiMoveInterval) {
+          this.startIndependentAIMovement();
+        }
+      } catch (_) { /* noop */ }
+
+      if (syncResult?.trialComplete) {
+        this.handleTrialComplete(syncResult);
+      }
+    } finally {
+      this.synchronizedDecisionPending = false;
     }
   }
 
@@ -737,7 +747,9 @@ export class ExperimentManager {
       }
     }
     if (direction) {
-      const moveResult = this.gameStateManager.processPlayerMove(this.aiPlayerNumber, direction);
+      const moveResult = CONFIG.game.requireBothLegalMoves && CONFIG.game.moveMode === 'simultaneous'
+        ? this.gameStateManager.processSynchronizedMovesMapped(this.aiPlayerNumber === 1 ? 2 : 1, null, direction)
+        : this.gameStateManager.processPlayerMove(this.aiPlayerNumber, direction);
       this.uiManager.updateGameDisplay(this.gameStateManager.getCurrentState());
 
       // Pre-calculate RL policy at trial start to avoid first-move lag (legacy-inspired)
