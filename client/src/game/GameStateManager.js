@@ -952,6 +952,17 @@ export class GameStateManager {
 
     // Check completion conditions based on experiment type
     if (GameConfigUtils.isStagHuntExperiment(this.currentState.experimentType)) {
+      if (!this.currentState.player2) {
+        // Solo practice round (no partner yet): finish as soon as player1
+        // reaches a goal, since evaluateStagHuntOutcome's bothPlayersReachedGoal
+        // check would otherwise wait forever for a player2 that doesn't exist.
+        if (player1AtGoal) {
+          this.computeRewardsForTrial();
+          this.trialData.collaborationSucceeded = false;
+          return true;
+        }
+        return this.stepCount >= CONFIG.game.maxGameLength;
+      }
       // Apply rewards and update totals as soon as a rabbit is caught or the
       // stag is jointly caught, rather than waiting until trial finalization.
       const stagHuntOutcome = GameHelpers.evaluateStagHuntOutcome(this.currentState, this.trialData);

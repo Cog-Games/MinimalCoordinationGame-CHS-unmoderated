@@ -1030,6 +1030,22 @@ export class TimelineManager {
     }
   }
 
+  // Plays a short pre-recorded clip, stopping any clip already playing.
+  playClipAudio(src) {
+    if (!src) return;
+    try {
+      if (this.currentClipAudio) {
+        this.currentClipAudio.pause();
+        this.currentClipAudio.currentTime = 0;
+      }
+      const audio = new Audio(src);
+      this.currentClipAudio = audio;
+      audio.play().catch((err) => console.warn('Unable to autoplay clip audio:', err));
+    } catch (err) {
+      console.warn('Error starting clip audio:', err);
+    }
+  }
+
   showCupcakeComprehensionCheckStage(experimentType, experimentIndex) {
     // Same visual format as the post-game questionnaire (showQuestionnaireStage):
     // image-option buttons, click or arrow-keys+Space to answer. Comprehension
@@ -1038,37 +1054,45 @@ export class TimelineManager {
       {
         name: 'big_kitchen_cupcakes',
         prompt: 'How many cupcakes can you make in the big kitchen?',
+        promptAudio: 'Big kitchen.mp4',
         options: ['1 cupcake', '5 cupcakes'],
         // Render the same cupcake image repeated per option so each cupcake is
         // the same size in both choices, rather than scaling one flat picture.
         optionImages: ['cupcake-one.png', 'cupcake-one.png'],
         optionImageCounts: [1, 5],
+        optionAudio: ['1 cupcake.mp4', '5 cupcakes.mp4'],
         correctIndex: 1
       },
       {
         name: 'big_kitchen_alone_or_together',
         prompt: 'For the big kitchen: can you do it alone, or do you have to be together?',
+        promptAudio: 'big kitchen toogether.mp4',
         options: ['Alone', 'Together'],
         // Fixed by HEIGHT (not width): together.png is wider since it shows two
         // chef-dots side by side, so sizing by width would shrink each dot.
         optionImages: ['alone.png', 'together.png'],
         optionImageHeight: 130,
+        optionAudio: ['alone.mp4', 'together.mp4'],
         correctIndex: 1
       },
       {
         name: 'small_kitchen_cupcakes',
         prompt: 'How many cupcakes can you make in the small kitchen?',
+        promptAudio: 'Small kitchen.mp4',
         options: ['1 cupcake', '5 cupcakes'],
         optionImages: ['cupcake-one.png', 'cupcake-one.png'],
         optionImageCounts: [1, 5],
+        optionAudio: ['1 cupcake.mp4', '5 cupcakes.mp4'],
         correctIndex: 0
       },
       {
         name: 'small_kitchen_alone_or_together',
         prompt: 'For the small kitchen: can you do it alone, or do you have to be together?',
+        promptAudio: 'small kitchen alone.mp4',
         options: ['Alone', 'Together'],
         optionImages: ['alone.png', 'together.png'],
         optionImageHeight: 130,
+        optionAudio: ['alone.mp4', 'together.mp4'],
         correctIndex: 0
       }
     ];
@@ -1181,17 +1205,28 @@ export class TimelineManager {
           </div>
         </div>`;
 
-      // Read the question aloud each time it's (re)shown.
-      this.speak(q.prompt);
+      // Read the question aloud each time it's (re)shown: use the recorded
+      // clip when one exists for this prompt, otherwise fall back to TTS.
+      if (q.promptAudio) {
+        this.playClipAudio(this.assetUrl(q.promptAudio));
+      } else {
+        this.speak(q.prompt);
+      }
 
       this.container.querySelectorAll('.comprehension-option').forEach((btn) => {
         const idx = Number(btn.getAttribute('data-idx') || '0');
         btn.addEventListener('click', () => {
           selectOption(idx);
         });
-        // Read the answer choice aloud on hover.
+        // Read the answer choice aloud on hover: use the recorded clip when
+        // one exists for this option, otherwise fall back to TTS.
         btn.addEventListener('mouseenter', () => {
-          this.speak(q.options[idx]);
+          const audioFile = q.optionAudio && q.optionAudio[idx];
+          if (audioFile) {
+            this.playClipAudio(this.assetUrl(audioFile));
+          } else {
+            this.speak(q.options[idx]);
+          }
         });
       });
     };

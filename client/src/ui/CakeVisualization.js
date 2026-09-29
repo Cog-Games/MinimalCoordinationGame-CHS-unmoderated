@@ -165,6 +165,8 @@ const STYLE = `
   flex: 0 0 auto;
   filter: drop-shadow(0 2px 3px rgba(100, 45, 20, 0.25));
   animation: cake-pop-in 200ms ease-out both;
+  pointer-events: auto;
+  cursor: pointer;
 }
 `;
 
@@ -181,6 +183,11 @@ export class CakeVisualization {
     this.cupcakeAreaEl = null;
     this.layerCount = 0;
     this.handleResize = null;
+    this.currentVoiceAudio = null;
+
+    // Randomize once per participant which side each widget appears on, so
+    // the cake tower isn't always on the right / cupcakes always on the left.
+    this.layoutFlipped = Math.random() < 0.5;
   }
 
   ensureMounted() {
@@ -216,6 +223,10 @@ export class CakeVisualization {
     this.cowIdleSrc = assetUrl('chef_cow.png');
     this.cowCelebrateSrc = assetUrl('cow-celebration.gif');
     this.cupcakeSrc = assetUrl('cupcake.png');
+    this.voiceLayerSrc = assetUrl('Yay another layer of cupcakes.mp4');
+    this.voiceCupcakeSrc = assetUrl('Yay another cupcake.mp4');
+    this.voiceNothingSrc = assetUrl('Aw no cupcakes.mp4');
+    this.voiceOneCupcakeSrc = assetUrl('1 cupcake.mp4');
     this.layerPhotos = Object.fromEntries(
       Object.entries(LAYER_PHOTOS).map(([count, { anim, photo, duration }]) => [
         count,
@@ -252,15 +263,21 @@ export class CakeVisualization {
     if (!rect.width && !rect.height) return;
 
     const widgetTop = Math.max(0, rect.top);
+    const leftSideX = Math.max(0, rect.left - GRID_GAP - WIDGET_WIDTH);
+    const rightSideX = rect.right + GRID_GAP;
 
-    // Cake card sits to the right of the grid.
+    // Which side each widget sits on is randomized once per participant
+    // (see this.layoutFlipped) so the cake tower/cupcakes aren't always on
+    // the same side of the grid.
+    const cakeX = this.layoutFlipped ? leftSideX : rightSideX;
+    const cupcakeX = this.layoutFlipped ? rightSideX : leftSideX;
+
     this.el.style.top = `${widgetTop}px`;
-    this.el.style.left = `${rect.right + GRID_GAP}px`;
+    this.el.style.left = `${cakeX}px`;
     this.el.style.height = `${rect.height}px`;
 
-    // Cupcake card sits to the left of the grid, mirroring the cake card.
     this.cupcakeWidgetEl.style.top = `${widgetTop}px`;
-    this.cupcakeWidgetEl.style.left = `${Math.max(0, rect.left - GRID_GAP - WIDGET_WIDTH)}px`;
+    this.cupcakeWidgetEl.style.left = `${cupcakeX}px`;
     this.cupcakeWidgetEl.style.height = `${rect.height}px`;
 
     // Cow sits centered beneath the grid canvas.
@@ -290,21 +307,26 @@ export class CakeVisualization {
       this.cakePhotoTimeout = null;
     }
     if (this.cakePhotoEl) this.cakePhotoEl.hidden = true;
+    if (this.currentVoiceAudio) {
+      this.currentVoiceAudio.pause();
+      this.currentVoiceAudio.currentTime = 0;
+      this.currentVoiceAudio = null;
+    }
   }
 
-  // Speaks a short line aloud via the browser's built-in speech synthesis
-  // (there's no pre-recorded audio for these dynamic celebration lines).
-  speak(text) {
-    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
-    if (!synth) return;
+  // Plays a pre-recorded celebration line, stopping any line already playing.
+  playVoiceLine(src) {
+    if (!src) return;
     try {
-      synth.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.pitch = 1.2;
-      utterance.rate = 1.05;
-      synth.speak(utterance);
+      if (this.currentVoiceAudio) {
+        this.currentVoiceAudio.pause();
+        this.currentVoiceAudio.currentTime = 0;
+      }
+      const audio = new Audio(src);
+      this.currentVoiceAudio = audio;
+      audio.play().catch((err) => console.warn('Unable to autoplay voice line:', err));
     } catch (err) {
-      console.warn('Unable to speak celebration line:', err);
+      console.warn('Error starting voice line audio:', err);
     }
   }
 
@@ -389,7 +411,7 @@ export class CakeVisualization {
     this.ensureMounted();
     if (this.layerCount >= MAX_LAYERS) return;
 
-    this.speak('Yay another layer of cupcakes!');
+    this.playVoiceLine(this.voiceLayerSrc);
 
     this.layerCount += 1;
     const newLayerCount = this.layerCount;
@@ -418,11 +440,12 @@ export class CakeVisualization {
 
   addCupcake() {
     this.ensureMounted();
-    this.speak('Yay another cupcake');
+    this.playVoiceLine(this.voiceCupcakeSrc);
     const cupcake = document.createElement('img');
     cupcake.className = 'cupcake';
     cupcake.alt = 'Cupcake';
     cupcake.src = this.cupcakeSrc;
+    cupcake.addEventListener('mouseenter', () => this.playVoiceLine(this.voiceOneCupcakeSrc));
     this.cupcakeAreaEl.appendChild(cupcake);
   }
 
@@ -437,7 +460,7 @@ export class CakeVisualization {
     } else if (messageType === 'stag-hunt-human-rabbit') {
       this.addCupcake();
     } else if (messageType === 'stag-hunt-human-nothing') {
-      this.speak('Aw no cupcakes this time.');
+      this.playVoiceLine(this.voiceNothingSrc);
     }
     this.positionWidgets();
   }

@@ -1157,7 +1157,12 @@ export class ExperimentManager {
       if (!this.sampledMapsByExperiment[experimentType] || this.sampledMapsByExperiment[experimentType].length !== totalTrials) {
         this.sampledMapsByExperiment[experimentType] = this.mapLoader.selectRandomMaps(mapsForExperiment, totalTrials, experimentType);
       }
-      const selectedDesign = this.sampledMapsByExperiment[experimentType][trialIndex];
+      // Trial 0 (Phase 1's lone practice round) has no partner yet: use a
+      // dedicated solo layout with only the two small goals and no AI start
+      // position, instead of one of the real 16 stag/partner maps.
+      const selectedDesign = (GameConfigUtils.isStagHuntExperiment(experimentType) && trialIndex === 0)
+        ? this.mapLoader.createStagHuntSoloIntroDesign()
+        : this.sampledMapsByExperiment[experimentType][trialIndex];
 
       if (selectedDesign) {
         let design = { ...selectedDesign };
