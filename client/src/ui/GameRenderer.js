@@ -1,5 +1,26 @@
 import { CONFIG, GAME_OBJECTS } from '../config/gameConfig.js';
 
+const assetBase = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
+const assetUrl = (name) => `${assetBase}${name}`.replace(/([^:])\/\//, '$1/');
+
+// Player sprites, shared across renderer instances (tightly cropped chef hats)
+const PLAYER_SPRITES = {
+  [GAME_OBJECTS.player]: { src: assetUrl('red_chef_icon.png'), image: null },
+  [GAME_OBJECTS.ai_player]: { src: assetUrl('purple_chef_icon.png'), image: null }
+};
+const spriteListeners = new Set();
+
+if (typeof Image !== 'undefined') {
+  for (const sprite of Object.values(PLAYER_SPRITES)) {
+    const img = new Image();
+    img.onload = () => {
+      sprite.image = img;
+      spriteListeners.forEach((fn) => fn());
+    };
+    img.src = sprite.src;
+  }
+}
+
 export class GameRenderer {
   constructor() {
     this.canvas = null;
@@ -8,6 +29,28 @@ export class GameRenderer {
     this.canvasSize = CONFIG.visual.canvasSize;
     this.padding = CONFIG.visual.padding;
     this.effectiveCellSize = this.cellSize + this.padding; // Cell + padding as used in legacy
+
+    // Redraw once player sprites finish loading
+    spriteListeners.add(() => {
+      if (this.canvas && this.gameState) this.render(this.canvas, this.gameState);
+    });
+  }
+
+  // Draw a player's chef sprite centered at (centerX, centerY), falling back to a dot
+  drawPlayerSprite(type, centerX, centerY, size) {
+    const sprite = PLAYER_SPRITES[type]?.image;
+    if (sprite) {
+      const scale = size / Math.max(sprite.width, sprite.height);
+      const w = sprite.width * scale;
+      const h = sprite.height * scale;
+      this.ctx.drawImage(sprite, centerX - w / 2, centerY - h / 2, w, h);
+      return;
+    }
+    this.ctx.fillStyle = type === GAME_OBJECTS.player ?
+      CONFIG.visual.colors.player1 : CONFIG.visual.colors.player2;
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, size / 2, 0, 2 * Math.PI);
+    this.ctx.fill();
   }
 
   createCanvas() {
@@ -352,35 +395,11 @@ export class GameRenderer {
 
     if (players.length === 1) {
       // Single player - draw normally
-      const player = players[0];
-      const color = player.type === GAME_OBJECTS.player ?
-        CONFIG.visual.colors.player1 : CONFIG.visual.colors.player2;
-
-      this.ctx.fillStyle = color;
-      this.ctx.beginPath();
-      this.ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-      this.ctx.fill();
+      this.drawPlayerSprite(players[0].type, centerX, centerY, radius * 2.4);
     } else if (players.length >= 2) {
-      // Multiple players - draw overlapping circles with offset
-      // First player (left side)
-      const firstPlayer = players[0];
-      const firstColor = firstPlayer.type === GAME_OBJECTS.player ?
-        CONFIG.visual.colors.player1 : CONFIG.visual.colors.player2;
-
-      this.ctx.fillStyle = firstColor;
-      this.ctx.beginPath();
-      this.ctx.arc(centerX - offset, centerY, radius, 0, 2 * Math.PI);
-      this.ctx.fill();
-
-      // Second player (right side)
-      const secondPlayer = players[1];
-      const secondColor = secondPlayer.type === GAME_OBJECTS.player ?
-        CONFIG.visual.colors.player1 : CONFIG.visual.colors.player2;
-
-      this.ctx.fillStyle = secondColor;
-      this.ctx.beginPath();
-      this.ctx.arc(centerX + offset, centerY, radius, 0, 2 * Math.PI);
-      this.ctx.fill();
+      // Multiple players - draw overlapping sprites with offset
+      this.drawPlayerSprite(players[0].type, centerX - offset, centerY, radius * 2);
+      this.drawPlayerSprite(players[1].type, centerX + offset, centerY, radius * 2);
     }
 
     this.ctx.restore();
@@ -486,15 +505,7 @@ export class GameRenderer {
 
         const radius = this.cellSize * 0.35;
 
-        if (cellType === GAME_OBJECTS.player) {
-          this.ctx.fillStyle = CONFIG.visual.colors.player1;
-        } else if (cellType === GAME_OBJECTS.ai_player) {
-          this.ctx.fillStyle = CONFIG.visual.colors.player2;
-        }
-
-        this.ctx.beginPath();
-        this.ctx.arc(currentX, currentY, radius, 0, 2 * Math.PI);
-        this.ctx.fill();
+        this.drawPlayerSprite(cellType, currentX, currentY, radius * 2.4);
 
         this.ctx.restore();
 

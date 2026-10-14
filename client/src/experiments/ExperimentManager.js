@@ -1264,7 +1264,7 @@ export class ExperimentManager {
       this.cakeVisualization.hide();
     });
 
-    // Hide the cake/cupcake/cow overlay whenever the timeline enters any
+    // Hide the cake/cupcake overlay whenever the timeline enters any
     // non-trial stage (instructions, matchmaking, comprehension check, etc.),
     // since it lives outside the timeline's container and would otherwise
     // bleed through between Stag Hunt's trial blocks.
@@ -1503,6 +1503,8 @@ export class ExperimentManager {
       const humanReachedSmall =
         Number.isInteger(humanGoal) && humanGoal >= 0 &&
         goalTypes[humanGoal] === 'small';
+      const reachedSmall = (goal) =>
+        Number.isInteger(goal) && goal >= 0 && goalTypes[goal] === 'small';
 
       if (humanReachedBig && partnerReachedBig && humanGoal === partnerGoal) {
         messageType = 'stag-hunt-both-stag';
@@ -1512,7 +1514,12 @@ export class ExperimentManager {
         messageType = 'stag-hunt-human-nothing';
       }
       if (this.lastCakeTrialIndex !== trialIndex) {
-        this.cakeVisualization.applyOutcome(messageType);
+        this.cakeVisualization.applyOutcome({
+          messageType,
+          sharedBatch: messageType === 'stag-hunt-both-stag',
+          redCupcake: reachedSmall(p1Goal),
+          purpleCupcake: reachedSmall(p2Goal)
+        });
         this.lastCakeTrialIndex = trialIndex;
       }
     } else {

@@ -447,7 +447,7 @@ export class GameApplication {
         allTrialsData: gsData.allTrialsData || [],
         questionnaireData: data.questionnaire || null,
         comprehensionCheckData: data.comprehensionCheck || null,
-        cakeWidgetLayoutFlipped: this.experimentManager?.cakeVisualization?.layoutFlipped ?? null,
+        cupcakeWidgetRedOnRight: this.experimentManager?.cakeVisualization?.redOnRight ?? null,
         participantDob: data.participantDob || null,
         participantAgeReferenceDate: data.participantAgeReferenceDate || null,
         participantAgeYears: data.participantAgeYears ?? null,

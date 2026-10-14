@@ -490,10 +490,12 @@ export class MapLoader {
   // Round 1 (Phase 1's single practice trial) runs before any partner is
   // introduced: just the player and two small goals, no stag/big goal and
   // no AI start position (omitting initAIGrid keeps player2 unset).
+  // A counter across the middle makes the player practice walking around obstacles.
   createStagHuntSoloIntroDesign() {
     return {
       initPlayerGrid: [8, 4],
       smallGoals: [[1, 2], [1, 6]],
+      obstacles: [[5, 2], [5, 3], [5, 4], [5, 5], [5, 6]],
       gridSize: 9,
       mapType: 'StagHunt',
       trial_phase: 'onboarding'

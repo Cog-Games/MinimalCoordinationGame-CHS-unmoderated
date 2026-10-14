@@ -1,4 +1,5 @@
 import { CONFIG, GameConfigUtils } from '../config/gameConfig.js';
+import { WIDGET_ROW_HEIGHT, WIDGET_ROW_SLOT_ID } from '../ui/CakeVisualization.js';
 
 /**
  * Timeline Manager - Orchestrates the complete experiment flow
@@ -631,79 +632,55 @@ export class TimelineManager {
     document.getElementById('dobMonth')?.focus();
   }
 
+  // The videos are watched by children, so they play straight through with no
+  // controls: clicks are ignored, and if anything pauses or seeks the video
+  // anyway (e.g. hardware media keys), it resumes / snaps back.
+  lockVideoPlayback(video) {
+    if (!video) return;
+    video.controls = false;
+    video.removeAttribute('controls');
+    video.disablePictureInPicture = true;
+    video.setAttribute('disablepictureinpicture', '');
+    video.setAttribute('disableremoteplayback', '');
+    video.style.pointerEvents = 'none';
+    video.tabIndex = -1;
+
+    let furthestTime = 0;
+    video.addEventListener('timeupdate', () => {
+      if (!video.seeking) furthestTime = Math.max(furthestTime, video.currentTime);
+    });
+    video.addEventListener('seeking', () => {
+      if (Math.abs(video.currentTime - furthestTime) > 0.5) video.currentTime = furthestTime;
+    });
+    video.addEventListener('pause', () => {
+      // Ignore the pause that happens when the screen changes and the video is removed
+      if (video.isConnected && !video.ended) video.play().catch(() => {});
+    });
+  }
+
   showWelcomeInfoStage() {
     this.container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
-        <style>
-          @keyframes welcomeArrowBounce {
-            0%, 100% { transform: translate(-50%, -5px); }
-            50% { transform: translate(-50%, 7px); }
-          }
-        </style>
-        <div style="background: white; padding: 36px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: calc(100% - 48px); max-width: 1120px; text-align: center;">
-          <h2 style="color: #333; margin: 0 0 24px; font-size: 36px;">Welcome to the Game!</h2>
+        <div style="background: white; padding: 24px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: calc(100% - 48px); max-width: 1600px; text-align: center;">
+          <h2 style="color: #333; margin: 0 0 16px; font-size: 36px;">Welcome to the Game!</h2>
           
-          <div style="display: flex; justify-content: center; align-items: stretch; gap: 24px; flex-wrap: wrap; margin: 0 auto;">
-            <div style="flex: 1 1 640px; min-width: 0; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 18px; text-align: center;">
-              <h3 style="color: #1f2937; margin: 0 0 16px; font-size: 22px; line-height: 1.3;">
-                <span style="display: block;">Chefs need to reach the kitchen</span>
-                <span style="display: block;">as quickly as possible!</span>
-              </h3>
-              <div style="display: flex; justify-content: center; align-items: center; gap: 22px; flex-wrap: wrap;">
-                <div style="display: flex; justify-content: center; align-items: center; gap: 18px; flex-wrap: wrap;">
-                  <div aria-label="Example game map" style="display: grid; grid-template-columns: repeat(5, 36px); grid-template-rows: repeat(5, 36px); gap: 3px; border: 2px solid #2f3a4a; padding: 7px; background: white; border-radius: 9px; box-shadow: 0 4px 10px rgba(0,0,0,0.06);">
-                    ${Array.from({ length: 25 }, (_, i) => {
-                      const goal = i === 3;
-                      const player = i === 11;
-                      const bg = goal ? '#007bff' : (player ? 'red' : '#f8f9fa');
-                      const radius = goal ? '4px' : (player ? '50%' : '0');
-                      const shadow = player ? 'box-shadow: 0 2px 5px rgba(255,0,0,0.25);' : '';
-                      return `<div style="background: ${bg}; border: 1px solid #d7dde6; border-radius: ${radius}; ${shadow}"></div>`;
-                    }).join('')}
-                  </div>
-                  <div style="display: flex; flex-direction: column; gap: 10px; font-size: 18px; color: #333; text-align: left;">
-                    <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 20px; height: 20px; background: red; border-radius: 50%;"></div><span>Chef</span></div>
-                    <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 20px; height: 20px; background: #007bff; border-radius: 4px;"></div><span>Kitchen</span></div>
-                  </div>
-                </div>
-
-                <div style="display: flex; justify-content: center; align-items: center;">
-                  <div style="display: grid; grid-template-columns: 220px 176px; grid-template-rows: 54px 54px 24px; column-gap: 18px; row-gap: 7px; align-items: start; justify-content: center;">
-                    <div aria-label="Space bar" style="grid-column: 1; grid-row: 2; position: relative; width: 220px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 18px; font-weight: bold; letter-spacing: 1px; color: #222;">
-                      <div id="welcomeSpacebarPrompt" aria-hidden="true" style="display: none; position: absolute; left: 50%; top: -56px; width: 34px; height: 50px; pointer-events: none; animation: welcomeArrowBounce 0.8s ease-in-out infinite;">
-                        <div style="width: 6px; height: 32px; margin: 0 auto; background: #28a745; border-radius: 999px;"></div>
-                        <div style="width: 0; height: 0; margin: -1px auto 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-top: 18px solid #28a745;"></div>
-                      </div>
-                      SPACE BAR
-                    </div>
-                    <div style="grid-column: 1; grid-row: 3; color: #475467; font-size: 15px; text-align: center;">start or continue</div>
-                    <div aria-label="Arrow keys" style="grid-column: 2; grid-row: 1 / span 2; display: grid; grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(2, 54px); gap: 7px;">
-                      <div></div>
-                      <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&uarr;</div>
-                      <div></div>
-                      <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&larr;</div>
-                      <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&darr;</div>
-                      <div style="width: 54px; height: 54px; border: 2px solid #bac7d6; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #fff; box-shadow: 0 4px 0 #d7dde6; font-size: 30px; font-weight: bold; color: #1f2937;">&rarr;</div>
-                    </div>
-                    <div style="grid-column: 2; grid-row: 3; color: #475467; font-size: 15px; text-align: center;">move your chef</div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            <div style="flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; justify-content: center;">
-              <video 
-                id="welcomeVideo"
-                width="100%" 
-                height="360"
-                controls
-                autoPlay
-                playsInline
-                style="display: block; width: 100%; height: auto; max-height: 420px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background: #000;">
-                <source src="${this.assetUrl('video1.mp4')}" type="video/mp4">
-                Your browser does not support the video tag.
-              </video>
+          <div style="margin: 0 auto;">
+            <video 
+              id="welcomeVideo"
+              width="100%" 
+              autoPlay
+              playsInline
+              style="display: block; width: 100%; height: auto; max-height: 72vh; object-fit: contain; border-radius: 8px; background: #fff;">
+              <source src="${this.assetUrl('video1.mp4')}" type="video/mp4">
+              Your browser does not support the video tag.
+            </video>
+            <div id="welcomeContinuePanel" style="display: none; box-sizing: border-box; width: 100%; margin-top: 14px; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 16px 18px; text-align: center;">
+              <p style="font-size: 18px; color: #1f2937; line-height: 1.35; margin: 0 0 14px;">
+                Press the spacebar or click here to continue!
+              </p>
+              <button id="welcomeContinueBtn" type="button" style="background: #28a745; color: white; border: none; padding: 14px 42px; font-size: 20px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                Continue
+              </button>
             </div>
           </div>
         </div>
@@ -713,12 +690,15 @@ export class TimelineManager {
     // Start the welcome video with sound. If autoplay audio is blocked, keep the video playing
     // and retry sound on the next user interaction.
     const welcomeVideo = document.getElementById('welcomeVideo');
-    const spacebarPrompt = document.getElementById('welcomeSpacebarPrompt');
+    this.lockVideoPlayback(welcomeVideo);
+    const continuePanel = document.getElementById('welcomeContinuePanel');
+    const continueBtn = document.getElementById('welcomeContinueBtn');
     let welcomeVideoComplete = !welcomeVideo;
+    let welcomeAdvanced = false;
     const showSpacebarPrompt = () => {
       welcomeVideoComplete = true;
-      if (spacebarPrompt) {
-        spacebarPrompt.style.display = 'block';
+      if (continuePanel) {
+        continuePanel.style.display = 'block';
       }
     };
 
@@ -767,21 +747,30 @@ export class TimelineManager {
       });
     }
 
-    // Handle spacebar to continue (matching legacy)
+    // Continue via the button or spacebar once the video has finished
+    const advanceWelcome = (event) => {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (!welcomeVideoComplete || welcomeAdvanced) return;
+      welcomeAdvanced = true;
+      document.removeEventListener('keydown', handleSpacebar, true);
+      if (continueBtn) continueBtn.removeEventListener('click', advanceWelcome);
+      console.log('🎮 Starting game sequence');
+      this.nextStage();
+    };
+
     const handleSpacebar = (event) => {
       if (event.code === 'Space' || event.key === ' ') {
         // Use capture + preventDefault so space doesn't play/pause the video
-        event.preventDefault();
-        event.stopPropagation();
-        if (!welcomeVideoComplete) return;
-        document.removeEventListener('keydown', handleSpacebar, true);
-        console.log('🎮 Starting game sequence');
-        this.nextStage();
+        advanceWelcome(event);
       }
     };
 
     // Capture phase ensures we intercept before focused elements (like <video>) handle spacebar.
     document.addEventListener('keydown', handleSpacebar, true);
+    if (continueBtn) continueBtn.addEventListener('click', advanceWelcome);
     document.body.focus();
   }
 
@@ -795,6 +784,7 @@ export class TimelineManager {
     // - First try to autoplay WITH sound (by this point the child has already interacted with the page)
     // - If the browser blocks that, fall back to muted autoplay and enable sound on first interaction
     let instructionVideo = this.container.querySelector('video');
+    this.lockVideoPlayback(instructionVideo);
     if (instructionVideo) {
       instructionVideo.autoplay = true;
       instructionVideo.playsInline = true;
@@ -1030,8 +1020,9 @@ export class TimelineManager {
     }
   }
 
-  // Plays a short pre-recorded clip, stopping any clip already playing.
-  playClipAudio(src) {
+  // Plays a short pre-recorded clip, stopping any clip already playing. If
+  // fallbackText is given, it is spoken instead when the clip can't be loaded.
+  playClipAudio(src, fallbackText = null) {
     if (!src) return;
     try {
       if (this.currentClipAudio) {
@@ -1039,6 +1030,7 @@ export class TimelineManager {
         this.currentClipAudio.currentTime = 0;
       }
       const audio = new Audio(src);
+      if (fallbackText) audio.addEventListener('error', () => this.speak(fallbackText), { once: true });
       this.currentClipAudio = audio;
       audio.play().catch((err) => console.warn('Unable to autoplay clip audio:', err));
     } catch (err) {
@@ -1048,8 +1040,8 @@ export class TimelineManager {
 
   showCupcakeComprehensionCheckStage(experimentType, experimentIndex) {
     // Same visual format as the post-game questionnaire (showQuestionnaireStage):
-    // image-option buttons, click or arrow-keys+Space to answer. Comprehension
-    // checks additionally require a correct answer before advancing.
+    // image-option buttons, answered by clicking. Comprehension checks
+    // additionally require a correct answer before advancing.
     const questions = [
       {
         name: 'big_kitchen_cupcakes',
@@ -1060,19 +1052,17 @@ export class TimelineManager {
         // the same size in both choices, rather than scaling one flat picture.
         optionImages: ['cupcake-one.png', 'cupcake-one.png'],
         optionImageCounts: [1, 5],
-        optionAudio: ['1 cupcake.mp4', '5 cupcakes.mp4'],
         correctIndex: 1
       },
       {
         name: 'big_kitchen_alone_or_together',
-        prompt: 'For the big kitchen: can you do it alone, or do you have to be together?',
-        promptAudio: 'big kitchen toogether.mp4',
-        options: ['Alone', 'Together'],
+        prompt: 'For the big oven: can you go by yourself, or do you have to go with the other chef?',
+        promptAudio: 'Comprehension Question 2.mp4',
+        options: ['By yourself', 'With the other chef'],
         // Fixed by HEIGHT (not width): together.png is wider since it shows two
         // chef-dots side by side, so sizing by width would shrink each dot.
         optionImages: ['alone.png', 'together.png'],
         optionImageHeight: 130,
-        optionAudio: ['alone.mp4', 'together.mp4'],
         correctIndex: 1
       },
       {
@@ -1082,27 +1072,30 @@ export class TimelineManager {
         options: ['1 cupcake', '5 cupcakes'],
         optionImages: ['cupcake-one.png', 'cupcake-one.png'],
         optionImageCounts: [1, 5],
-        optionAudio: ['1 cupcake.mp4', '5 cupcakes.mp4'],
         correctIndex: 0
       },
       {
         name: 'small_kitchen_alone_or_together',
-        prompt: 'For the small kitchen: can you do it alone, or do you have to be together?',
-        promptAudio: 'small kitchen alone.mp4',
-        options: ['Alone', 'Together'],
+        prompt: 'For the small oven: can you go by yourself, or do you have to go with the other chef?',
+        promptAudio: 'Comprehension 4.mp4',
+        options: ['By yourself', 'With the other chef'],
         optionImages: ['alone.png', 'together.png'],
         optionImageHeight: 130,
-        optionAudio: ['alone.mp4', 'together.mp4'],
         correctIndex: 0
       }
     ];
 
     const results = [];
     let qIndex = 0;
-    let selIndex = 0;
+    // Randomize (50/50) which side each answer appears on, once per question so
+    // the order stays put if the participant retries after a wrong answer.
+    // Entries are original option indices in left-to-right display order.
+    const displayOrders = questions.map((q) => {
+      const order = q.options.map((_, i) => i);
+      return Math.random() < 0.5 ? order.reverse() : order;
+    });
 
     const finish = () => {
-      document.removeEventListener('keydown', handleKeys);
       this.experimentData.comprehensionCheck = {
         experimentType,
         questions: results,
@@ -1117,10 +1110,14 @@ export class TimelineManager {
 
     const selectOption = (idx) => {
       const q = questions[qIndex];
-      selIndex = idx;
       const correct = idx === q.correctIndex;
 
-      const attemptRecord = results[qIndex] || { name: q.name, attempts: 0, firstAttemptCorrect: null };
+      const attemptRecord = results[qIndex] || {
+        name: q.name,
+        attempts: 0,
+        firstAttemptCorrect: null,
+        displayOrder: displayOrders[qIndex].map((i) => q.options[i])
+      };
       attemptRecord.attempts += 1;
       if (attemptRecord.firstAttemptCorrect === null) {
         attemptRecord.firstAttemptCorrect = correct;
@@ -1136,7 +1133,6 @@ export class TimelineManager {
 
       if (qIndex < questions.length - 1) {
         qIndex += 1;
-        selIndex = 0;
         renderQuestion(false);
       } else {
         finish();
@@ -1160,10 +1156,8 @@ export class TimelineManager {
         ? `height: ${ITEM_HEIGHT}px; width: auto;`
         : `width: ${ITEM_WIDTH}px; height: auto;`;
 
-      const optionsHtml = q.options.map((opt, idx) => {
-        const isSelected = idx === selIndex;
-        const borderColor = isSelected ? '#4f46e5' : '#e5e7eb';
-        const bgColor = isSelected ? '#eef2ff' : '#ffffff';
+      const optionsHtml = displayOrders[qIndex].map((idx) => {
+        const opt = q.options[idx];
         const src = images[idx] ? this.assetUrl(images[idx]) : '';
         const count = Math.max(1, imageCounts[idx] || 1);
         const itemsHtml = src
@@ -1177,8 +1171,8 @@ export class TimelineManager {
             padding: 12px 16px;
             margin: 8px 12px;
             border-radius: 16px;
-            border: 3px solid ${borderColor};
-            background: ${bgColor};
+            border: 3px solid #e5e7eb;
+            background: #ffffff;
             cursor: pointer;
             display: inline-flex;
             flex-direction: column;
@@ -1199,18 +1193,20 @@ export class TimelineManager {
             ${showError ? '<p style="text-align:center; color:#b91c1c; font-weight:700; margin:0 0 8px;">Not quite, try again!</p>' : ''}
             <h2 style="text-align:center; margin:8px 0 20px; color:#111827;">${q.prompt}</h2>
             <div style="margin-bottom:16px; text-align:center; color:#6b7280;">
-              Click an image to answer (or use arrow keys and Space).
+              Click an image to answer.
             </div>
             <div id="options" style="display:flex; flex-direction:row; flex-wrap:wrap; justify-content:center; align-items:center;">${optionsHtml}</div>
           </div>
         </div>`;
 
-      // Read the question aloud each time it's (re)shown: use the recorded
-      // clip when one exists for this prompt, otherwise fall back to TTS.
-      if (q.promptAudio) {
-        this.playClipAudio(this.assetUrl(q.promptAudio));
-      } else {
-        this.speak(q.prompt);
+      // Read the question aloud when it first appears (not again after a wrong
+      // answer): use the recorded clip when one exists, otherwise fall back to TTS.
+      if (!showError) {
+        if (q.promptAudio) {
+          this.playClipAudio(this.assetUrl(q.promptAudio));
+        } else {
+          this.speak(q.prompt);
+        }
       }
 
       this.container.querySelectorAll('.comprehension-option').forEach((btn) => {
@@ -1218,42 +1214,9 @@ export class TimelineManager {
         btn.addEventListener('click', () => {
           selectOption(idx);
         });
-        // Read the answer choice aloud on hover: use the recorded clip when
-        // one exists for this option, otherwise fall back to TTS.
-        btn.addEventListener('mouseenter', () => {
-          const audioFile = q.optionAudio && q.optionAudio[idx];
-          if (audioFile) {
-            this.playClipAudio(this.assetUrl(audioFile));
-          } else {
-            this.speak(q.options[idx]);
-          }
-        });
       });
     };
 
-    const handleKeys = (e) => {
-      const isPreviousKey =
-        e.code === 'ArrowUp' || e.key === 'ArrowUp' ||
-        e.code === 'ArrowLeft' || e.key === 'ArrowLeft';
-      const isNextKey =
-        e.code === 'ArrowDown' || e.key === 'ArrowDown' ||
-        e.code === 'ArrowRight' || e.key === 'ArrowRight';
-
-      if (isPreviousKey) {
-        e.preventDefault();
-        selIndex = Math.max(0, selIndex - 1);
-        renderQuestion(false);
-      } else if (isNextKey) {
-        e.preventDefault();
-        selIndex = Math.min(questions[qIndex].options.length - 1, selIndex + 1);
-        renderQuestion(false);
-      } else if (e.code === 'Space' || e.key === ' ') {
-        e.preventDefault();
-        selectOption(selIndex);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeys);
     renderQuestion(false);
   }
 
@@ -1503,11 +1466,10 @@ export class TimelineManager {
               id="matchPlayVideo"
               width="100%"
               height="400"
-              controls
               autoplay
               playsinline
               style="max-width: 600px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <source src="${this.assetUrl('video3.mp4')}" type="video/mp4">
+              <source src="${this.assetUrl('game_ready.mp4')}" type="video/mp4">
               Your browser does not support the video tag.
             </video>
           </div>
@@ -1518,7 +1480,7 @@ export class TimelineManager {
               <span style="display:inline-block; width: 14px; height: 14px; background-color: ${this.playerIndex === 0 ? CONFIG.visual.colors.player1 : CONFIG.visual.colors.player2}; border-radius: 50%; vertical-align: middle; margin-left: 6px;"></span>
             </p>
             <div id="matchStartPanel" style="display: none; margin: 24px auto 0; max-width: 480px; background: #f8fbff; border: 2px solid #28a745; border-radius: 12px; padding: 18px 22px; text-align: center;">
-              <p style="margin: 0 0 14px; font-size: 24px; font-weight: 700; color: #333;">Press the spacebar or click here to start the game!</p>
+              <p style="margin: 0 0 14px; font-size: 24px; color: #333;">Press the spacebar or click here to start the game!</p>
               <button id="matchStartBtn" type="button" disabled style="background: #28a745; color: white; border: none; padding: 14px 42px; font-size: 22px; font-weight: bold; border-radius: 8px; cursor: not-allowed; opacity: 0.55; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background 0.2s, opacity 0.2s;">
                 Start Game
               </button>
@@ -1532,6 +1494,27 @@ export class TimelineManager {
     `;
 
     const matchVideo = document.getElementById('matchPlayVideo');
+    this.lockVideoPlayback(matchVideo);
+    if (matchVideo) {
+      // No controls, so start playback ourselves: with sound if allowed,
+      // otherwise muted with sound (and playback) retried on the next interaction
+      const playWithSound = () => {
+        matchVideo.muted = false;
+        matchVideo.volume = 1;
+        return matchVideo.play();
+      };
+      playWithSound().catch(() => {
+        matchVideo.muted = true;
+        matchVideo.play().catch(() => {});
+        const retry = () => {
+          playWithSound().catch(() => {});
+          document.removeEventListener('click', retry);
+          document.removeEventListener('keydown', retry);
+        };
+        document.addEventListener('click', retry, { once: true });
+        document.addEventListener('keydown', retry, { once: true });
+      });
+    }
     const matchStartPanel = document.getElementById('matchStartPanel');
     const matchStartBtn = document.getElementById('matchStartBtn');
     let matchVideoComplete = false;
@@ -1697,11 +1680,28 @@ export class TimelineManager {
     const totalGames = CONFIG?.game?.experiments?.order?.length || 1;
     const title = fullTitle || `Game ${experimentIndex + 1}/${totalGames}: Round ${trialIndex + 1}/${totalRounds}`;
 
+    // Announce the practice round at Game 1, Round 1 of Stag Hunt. Uses the
+    // recorded clip if present, otherwise the browser's speech synthesis.
+    if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
+      const roundInfo = GameConfigUtils.getStagHuntGameRoundInfo(trialIndex);
+      if (roundInfo?.gameNumber === 1 && roundInfo?.roundInGame === 1) {
+        this.playClipAudio(this.assetUrl('Let’s practice.mp4'), "First, let's practice!");
+      }
+    }
+
+    // Stag Hunt shows the cupcake/cake widget row beneath the grid, so reserve room for it
+    const showCakeRow = GameConfigUtils.isStagHuntExperiment(experimentType);
+    const cakeRowMargin = 12;
+    const reservedHeight = 125 + (showCakeRow ? WIDGET_ROW_HEIGHT + cakeRowMargin : 0);
+    const cakeRowSlot = showCakeRow
+      ? `<div id="${WIDGET_ROW_SLOT_ID}" style="width: 100%; height: ${WIDGET_ROW_HEIGHT}px; margin-top: ${cakeRowMargin}px; flex: 0 0 auto;"></div>`
+      : '';
+
     // Create trial container with game canvas area
     this.container.innerHTML = `
       <div
         data-grid-fit-container="true"
-        data-grid-reserved-height="125"
+        data-grid-reserved-height="${reservedHeight}"
         style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 10px 16px 48px; overflow: hidden;"
       >
         <div style="text-align: center; max-width: 800px; width: 100%; display: flex; flex-direction: column; align-items: center;">
@@ -1712,6 +1712,7 @@ export class TimelineManager {
           <div style="margin-top: 8px; font-size: 14px; color: #666; line-height: 1.3;">
             <p style="margin: 0;">You are ${playerName} <span style="display: inline-block; width: 18px; height: 18px; background-color: ${playerColor}; border-radius: 50%; vertical-align: middle;"></span>. Use arrow keys to move.</p>
           </div>
+          ${cakeRowSlot}
         </div>
       </div>
     `;
@@ -1925,7 +1926,7 @@ export class TimelineManager {
 
   showQuestionnaireStage() {
     const startQuestionnaire = () => {
-      // Keyboard-first questionnaire (mouse/touch also supported for the first question)
+      // Questionnaire answered by clicking an image
       const questions = [
         {
           name: 'ai_detection',
@@ -1952,9 +1953,6 @@ export class TimelineManager {
 
       const answers = {};
       let qIndex = 0;
-      // For the first question (ai_detection), we have 2 options (0/1).
-      // Default to index 0 so pressing Space before clicking is safe.
-      let selIndex = 0;
 
       // Questionnaire audio: only question1.mp3–question3.mp3 for each page prompt (no TTS for options).
       let currentAudio = null;
@@ -2004,17 +2002,14 @@ export class TimelineManager {
         const images = q.optionImages || [];
 
         const optionsHtml = q.options.map((opt, idx) => {
-          const isSelected = idx === selIndex;
-          const borderColor = isSelected ? '#4f46e5' : '#e5e7eb';
-          const bgColor = isSelected ? '#eef2ff' : '#ffffff';
           const src = images[idx] ? this.assetUrl(images[idx]) : '';
           return `
             <button type="button" class="image-option" data-idx="${idx}" aria-label="${opt.replace(/"/g, '&quot;')}" style="
               padding: 12px 16px;
               margin: 8px 12px;
               border-radius: 16px;
-              border: 3px solid ${borderColor};
-              background: ${bgColor};
+              border: 3px solid #e5e7eb;
+              background: #ffffff;
               cursor: pointer;
               display: inline-flex;
               flex-direction: column;
@@ -2035,7 +2030,7 @@ export class TimelineManager {
               <div style="text-align:center; margin-bottom:8px; color:#6b7280; font-weight:600;">${q.title}</div>
               <h2 style="text-align:center; margin:8px 0 20px; color:#111827;">${q.prompt}</h2>
               <div style="margin-bottom:16px; text-align:center; color:#6b7280;">
-                Click an image to answer (or use arrow keys and Space).
+                Click an image to answer.
               </div>
               <div id="options" style="display:flex; flex-direction:row; flex-wrap:wrap; justify-content:center; align-items:center;">${optionsHtml}</div>
             </div>
@@ -2049,8 +2044,7 @@ export class TimelineManager {
         buttons.forEach((btn) => {
           btn.addEventListener('click', () => {
             const idx = Number(btn.getAttribute('data-idx') || '0');
-            selIndex = idx;
-            answers[q.name] = q.options[selIndex];
+            answers[q.name] = q.options[idx];
 
             if (synth) synth.cancel();
             if (currentAudio) {
@@ -2061,10 +2055,8 @@ export class TimelineManager {
 
             if (qIndex < questions.length - 1) {
               qIndex += 1;
-              selIndex = 0;
               renderQuestion(true);
             } else {
-              document.removeEventListener('keydown', handleKeys);
               this.experimentData.questionnaire = answers;
               this.experimentData.questionnaireCompletedAt = new Date().toISOString();
               console.log('📝 Questionnaire completed');
@@ -2074,56 +2066,7 @@ export class TimelineManager {
         });
       };
 
-      const handleKeys = (e) => {
-        const isPreviousKey =
-          e.code === 'ArrowUp' || e.key === 'ArrowUp' ||
-          e.code === 'ArrowLeft' || e.key === 'ArrowLeft';
-        const isNextKey =
-          e.code === 'ArrowDown' || e.key === 'ArrowDown' ||
-          e.code === 'ArrowRight' || e.key === 'ArrowRight';
-
-        if (isPreviousKey) {
-          e.preventDefault();
-          selIndex = Math.max(0, selIndex - 1);
-          renderQuestion(false);
-        } else if (isNextKey) {
-          e.preventDefault();
-          selIndex = Math.min(questions[qIndex].options.length - 1, selIndex + 1);
-          renderQuestion(false);
-        } else if (e.code === 'Space' || e.key === ' ') {
-          e.preventDefault();
-
-          if (synth) synth.cancel();
-          if (currentAudio) {
-            currentAudio.pause();
-            currentAudio.currentTime = 0;
-            currentAudio = null;
-          }
-
-          answers[questions[qIndex].name] = questions[qIndex].options[selIndex];
-
-          if (qIndex < questions.length - 1) {
-            qIndex += 1;
-            selIndex = 0;
-            renderQuestion(true);
-          } else {
-            document.removeEventListener('keydown', handleKeys);
-            if (synth) synth.cancel();
-            if (currentAudio) {
-              currentAudio.pause();
-              currentAudio.currentTime = 0;
-              currentAudio = null;
-            }
-            this.experimentData.questionnaire = answers;
-            this.experimentData.questionnaireCompletedAt = new Date().toISOString();
-            console.log('📝 Questionnaire completed');
-            this.nextStage();
-          }
-        }
-      };
-
       renderQuestion(true); // Initial render
-      document.addEventListener('keydown', handleKeys);
 
       // Clean up speech when leaving the page
       const cleanup = () => {
@@ -2133,7 +2076,6 @@ export class TimelineManager {
           currentAudio.currentTime = 0;
           currentAudio = null;
         }
-        document.removeEventListener('keydown', handleKeys);
       };
 
       // Store cleanup function for potential future use
@@ -2151,7 +2093,6 @@ export class TimelineManager {
               id="questionnaireInstructionsVideo"
               width="100%"
               height="400"
-              controls
               autoPlay
               muted
               playsInline
@@ -2176,6 +2117,7 @@ export class TimelineManager {
 
     // Autoplay behavior: first try with sound, fall back to muted
     const videoEl = document.getElementById('questionnaireInstructionsVideo');
+    this.lockVideoPlayback(videoEl);
     const questionnaireStartPanel = document.getElementById('questionnaireStartPanel');
     const questionnaireStartBtn = document.getElementById('questionnaireStartBtn');
     let questionnaireVideoComplete = false;
@@ -2449,36 +2391,38 @@ export class TimelineManager {
       titleColor = '#333',
       subtitle = '',
       intro = '',
-      items,
+      items = [],
       videoId,
       videoSrc
-    }) => ({
+    }) => {
+      // Without any text, show the video on its own, centered and larger
+      const hasText = Boolean(intro) || items.length > 0;
+      return {
       html: `
         <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 24px;">
-          <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: calc(100% - 24px); max-width: 1120px; text-align: center;">
-            <h2 style="color: ${titleColor}; margin: 0 0 12px; font-size: 36px;">${title}</h2>
+          <div style="background: white; padding: ${hasText ? '30px' : '20px'}; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: calc(100% - 24px); max-width: ${hasText ? '1120px' : '1600px'}; text-align: center;">
+            ${title ? `<h2 style="color: ${titleColor}; margin: 0 0 12px; font-size: 36px;">${title}</h2>` : ''}
             ${subtitle ? `<h3 style="color: #000; margin: 0 0 22px; font-size: 24px;">${subtitle}</h3>` : ''}
 
             <div style="display: flex; justify-content: center; align-items: stretch; gap: 24px; flex-wrap: wrap;">
-              <div style="flex: 1 1 420px; min-width: 300px; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 28px; display: flex; flex-direction: column; justify-content: center;">
+              ${hasText ? `<div style="flex: 1 1 420px; min-width: 300px; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 28px; display: flex; flex-direction: column; justify-content: center;">
                 ${intro ? `<p style="font-size: 22px; color: #1f2937; margin: 0 0 16px; line-height: 1.55; text-align: left;">${intro}</p>` : ''}
                 ${renderInstructionList(items)}
-              </div>
+              </div>` : ''}
 
-              <div style="flex: 1 1 420px; min-width: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+              <div style="${hasText ? 'flex: 1 1 420px;' : 'flex: 1 1 100%;'} min-width: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
                 <video
                   id="${videoId}"
                   width="100%"
                   height="360"
-                  controls
                   autoplay
                   playsinline
-                  style="display: block; width: 100%; height: auto; max-height: 420px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background: #000;">
+                  style="display: block; width: 100%; height: auto; max-height: ${hasText ? '420px' : '82vh'}; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background: ${hasText ? '#000' : '#fff'};">
                   <source src="${this.assetUrl(videoSrc)}" type="video/mp4">
                   Your browser does not support the video tag.
                 </video>
                 <div id="instructionContinuePanel" style="display: none; box-sizing: border-box; width: 100%; margin-top: 14px; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; padding: 16px 18px; text-align: center;">
-                  <p style="font-size: 18px; color: #1f2937; font-weight: bold; line-height: 1.35; margin: 0 0 14px;">
+                  <p style="font-size: 18px; color: #1f2937; line-height: 1.35; margin: 0 0 14px;">
                     Press the spacebar or click here to continue!
                   </p>
                   <button id="instructionContinueBtn" type="button" disabled style="background: #28a745; color: white; border: none; padding: 14px 42px; font-size: 20px; font-weight: bold; border-radius: 8px; cursor: not-allowed; opacity: 0.55; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background 0.2s, opacity 0.2s;">
@@ -2490,7 +2434,8 @@ export class TimelineManager {
           </div>
         </div>
       `
-    });
+      };
+    };
 
     const instructions = {
       '1P1G': renderVideoInstruction({
@@ -2541,14 +2486,8 @@ export class TimelineManager {
         ]
       }),
       'StagHunt': renderVideoInstruction({
-        title: 'Stag Hunt',
         videoId: 'staghuntRulesVideo',
-        videoSrc: 'video2-staghunt.mp4',
-        items: [
-          'You are the red chef.',
-          'You can go to the small kitchen alone to bake a cupcake.',
-          'Dark squares are kitchen counters and you cannot move through them.'
-        ]
+        videoSrc: 'video2.mp4'
       }),
       'StagHuntTwoStags': {
         html: `
@@ -2564,13 +2503,8 @@ export class TimelineManager {
       // Phase 2 intro: shown right before the participant is matched with their
       // partner, introducing the second video and the practice-with-partner round.
       'StagHunt_partner_intro': renderVideoInstruction({
-        title: 'Stag Hunt',
         videoId: 'staghuntPartnerVideo',
-        videoSrc: 'video3-partnerintro.mp4',
-        items: [
-          'To make one cupcake for Chef Cowlie, you can go to the small kitchen to cook by yourself.',
-          'To make 5 cupcakes for Chef Cowlie’s cupcake tower, you have to go with your partner to the big kitchen to cook together.'
-        ]
+        videoSrc: 'video3.mp4'
       })
     };
 

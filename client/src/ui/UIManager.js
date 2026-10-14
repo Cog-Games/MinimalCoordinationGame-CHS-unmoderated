@@ -557,7 +557,7 @@ export class UIManager {
     } else if (messageType === 'collaboration') {
       message = success ? 'Collaboration succeeded!' : 'Collaboration failed!';
     } else if (messageType === 'stag-hunt-both-stag') {
-      message = 'You made a layer of cupcakes!';
+      message = 'You made 5 cupcakes!';
     } else if (messageType === 'stag-hunt-human-rabbit') {
       message = 'You made a cupcake!';
     } else if (messageType === 'stag-hunt-human-nothing') {
