@@ -1,0 +1,79 @@
+// Deploy as a web app executing as the existing study owner.
+// Enable the Advanced Drive service v3. Keep the existing folder private.
+const STUDY_FOLDER_ID = '1d8S_QSY0JrJ0K3Qz3Jn7rNIsedTL7grC';
+const WORKBOOK_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+function jsonResponse_(value) {
+  return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet() {
+  return jsonResponse_({ status: 'ready', protocol: 'cake-session-upsert-v1' });
+}
+
+function digest_(value) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8)
+    .map(b => ('0' + ((b + 256) % 256).toString(16)).slice(-2)).join('');
+}
+
+function doPost(event) {
+  const lock = LockService.getScriptLock();
+  try {
+    const p = event.parameter || {};
+    const sessionId = p.sessionId;
+    const revision = Number(p.revision);
+    if (p.protocol !== 'cake-session-upsert-v1' || !/^[a-f0-9]{32}$/.test(sessionId || '') ||
+        !/^[a-f0-9]{32}$/.test(p.writeToken || '') || !Number.isSafeInteger(revision) || revision < 1 ||
+        !['in_progress', 'completed'].includes(p.sessionStatus) || p.filetype !== 'excel') {
+      throw new Error('Invalid session upload');
+    }
+    if (!p.filedata || p.filedata.length > 20000000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(p.filedata)) throw new Error('Invalid workbook');
+    const bytes = Utilities.base64Decode(p.filedata);
+    if (bytes[0] !== 80 || bytes[1] !== 75) throw new Error('Expected XLSX workbook');
+    const fileName = `cake_${sessionId}.xlsx`;
+    const tokenHash = digest_(p.writeToken);
+    const contentHash = digest_(p.filedata);
+    lock.waitLock(25000);
+    // Metadata and bytes are written in the same Drive request. Retrying after a
+    // lost response finds the existing file rather than creating another copy.
+    const result = Drive.Files.list({
+      q: `'${STUDY_FOLDER_ID}' in parents and trashed = false and appProperties has { key='cakeSessionId' and value='${sessionId}' }`,
+      fields: 'files(id,name,appProperties),nextPageToken', pageSize: 2
+    });
+    if ((result.files || []).length > 1 || result.nextPageToken) throw new Error('Duplicate session files require review');
+    let file = (result.files || [])[0];
+    let storedRevision = revision;
+    let disposition = 'created';
+    if (file) {
+      const previous = file.appProperties;
+      if (previous.writeTokenHash !== tokenHash) throw new Error('Session write token mismatch');
+      storedRevision = Number(previous.revision);
+      if (!Number.isSafeInteger(storedRevision)) throw new Error('Invalid stored revision');
+      if (revision === storedRevision && previous.contentHash !== contentHash) throw new Error('Revision content conflict');
+      if (previous.sessionStatus === 'completed' && p.sessionStatus !== 'completed' && revision > storedRevision) throw new Error('Completed session cannot be reopened');
+      disposition = revision < storedRevision ? 'superseded' : 'unchanged';
+    }
+    if (!file || revision > storedRevision) {
+      const metadata = { name: fileName, mimeType: WORKBOOK_MIME, appProperties: {
+        cakeSessionId: sessionId, revision: String(revision), writeTokenHash: tokenHash,
+        contentHash, sessionStatus: p.sessionStatus
+      } };
+      const blob = Utilities.newBlob(bytes, WORKBOOK_MIME, fileName);
+      if (file) {
+        file = Drive.Files.update(metadata, file.id, blob, { fields: 'id,name,appProperties' });
+        disposition = 'updated';
+      } else {
+        metadata.parents = [STUDY_FOLDER_ID];
+        file = Drive.Files.create(metadata, blob, { fields: 'id,name,appProperties' });
+      }
+      storedRevision = revision;
+    }
+    return jsonResponse_({ status: 'success', protocol: 'cake-session-upsert-v1', sessionId,
+      revision, storedRevision, disposition, fileId: file.id, fileName: file.name,
+      savedAt: new Date().toISOString() });
+  } catch (error) {
+    return jsonResponse_({ status: 'error', message: String(error.message || error) });
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}

@@ -84,7 +84,7 @@ if (trials.length > 0) {
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   XLSX.utils.book_append_sheet(wb, ws, 'ExperimentData');
 } else {
-  const ws = XLSX.utils.aoa_to_sheet([["No experimental data available"], [new Date().toISOString()]]);
+  const ws = XLSX.utils.aoa_to_sheet([["No experimental data available"], [exportObj.timestamp || '']]);
   XLSX.utils.book_append_sheet(wb, ws, 'ExperimentData');
 }
 

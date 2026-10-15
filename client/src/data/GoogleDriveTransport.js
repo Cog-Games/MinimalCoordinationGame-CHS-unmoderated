@@ -19,15 +19,27 @@ export function snapshotWorkbook(record, XLSX) {
 }
 
 export function googleDriveFetch({ XLSX = () => window.XLSX, fetchImpl = (...args) => fetch(...args) } = {}) {
+  const ready = new Set();
   return async (endpoint, options) => {
     if (!endpoint.startsWith('https://script.google.com/macros/s/')) return fetchImpl(endpoint, options);
+    // Check before POSTing: an older deployment would silently create duplicates.
+    if (!ready.has(endpoint)) {
+      const check = await fetchImpl(endpoint, { method:'GET', mode:'cors', credentials:'omit', signal:options.signal });
+      const capability = check.ok ? await check.json() : null;
+      if (capability?.protocol !== 'cake-session-upsert-v1') throw new Error('Google Drive save service needs the session-update deployment; data remains backed up locally');
+      ready.add(endpoint);
+    }
     const record = JSON.parse(options.body);
-    const filename = `cake_${record.sessionId}_r${String(record.revision).padStart(9,'0')}.xlsx`;
-    const body = new URLSearchParams({ filename, filedata:snapshotWorkbook(record, XLSX()), filetype:'excel', sessionId:record.sessionId, snapshotReason:record.snapshot.saveCheckpoint || '' });
+    const filename = `cake_${record.sessionId}.xlsx`;
+    const body = new URLSearchParams({ protocol:'cake-session-upsert-v1', filename, filedata:snapshotWorkbook(record, XLSX()), filetype:'excel', sessionId:record.sessionId,
+      revision:String(record.revision), writeToken:record.writeToken, sessionStatus:record.snapshot.sessionStatus,
+      snapshotReason:record.snapshot.saveCheckpoint || '' });
     const response = await fetchImpl(endpoint, { method:'POST', mode:'cors', body, signal:options.signal, credentials:'omit' });
     if (!response.ok) throw new Error(`Google Drive returned HTTP ${response.status}`);
     const ack = await response.json();
-    if (ack.status !== 'success' || ack.fileName !== filename || typeof ack.fileId !== 'string' || !ack.fileId) throw new Error('Google Drive did not confirm this file');
+    if (ack.status !== 'success' || ack.protocol !== 'cake-session-upsert-v1' || ack.sessionId !== record.sessionId ||
+        ack.revision !== record.revision || !Number.isSafeInteger(ack.storedRevision) || ack.storedRevision < record.revision ||
+        ack.fileName !== filename || typeof ack.fileId !== 'string' || !ack.fileId) throw new Error('Google Drive did not confirm this session revision');
     return { ok:true, json:async () => ({ saved:true, sessionId:record.sessionId, revision:record.revision, savedAt:new Date().toISOString(), fileId:ack.fileId, fileName:ack.fileName }) };
   };
 }

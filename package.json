@@ -17,7 +17,7 @@
     "test:storage": "node tests/research-storage.test.mjs",
     "test:lan": "node tests/lan-play.test.mjs",
     "build:pages": "VITE_STATIC_AI=true VITE_RESEARCH_STORAGE=google-drive VITE_ENABLE_GOOGLE_DRIVE_SAVE=false vite build",
-    "test:drive": "node tests/google-drive-transport.test.mjs"
+    "test:drive": "node tests/google-drive-transport.test.mjs && node tests/drive-session-upsert.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
