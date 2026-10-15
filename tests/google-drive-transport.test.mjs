@@ -36,3 +36,13 @@ await assert.rejects(()=>oldService(endpoint,{body:JSON.stringify(record)}),/dep
 assert.equal(oldPosts,0,'legacy service must not receive a duplicate-producing POST');
 assert.equal(snapshotWorkbook(record,c.XLSX),snapshotWorkbook(record,c.XLSX),'same revision produces identical bytes');
 console.log('PASS: stable filename, revision acknowledgement, capability check prevents legacy duplicate creation.');
+for (const fields of [{participantIndex:'M001',studySetting:'museum',parentEmail:null},{parentEmail:'parent+study@example.com',studySetting:'remote'}]) {
+  const named={...record,snapshot:{...record.snapshot,...fields}};
+  await make(o=>({status:'success',protocol:'cake-session-upsert-v1',sessionId:record.sessionId,revision:7,storedRevision:7,fileId:'same-file',fileName:o.body.get('filename')}))(endpoint,{body:JSON.stringify(named)});
+  assert.equal(sent.body.get('filename'),`cake_${fields.participantIndex || fields.parentEmail}_${record.sessionId}.xlsx`);
+  const book=c.XLSX.read(snapshotWorkbook(named,c.XLSX),{type:'base64'});
+  const row=c.XLSX.utils.sheet_to_json(book.Sheets.ExperimentData)[0];
+  assert.equal(row.studySetting,fields.studySetting);
+  assert.equal(row.participantIndex,fields.participantIndex || '');
+}
+console.log('PASS: museum index and parent email are sent in filenames and recorded in the analysis table.');

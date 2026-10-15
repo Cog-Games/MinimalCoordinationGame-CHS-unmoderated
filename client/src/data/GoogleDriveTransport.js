@@ -18,6 +18,11 @@ export function snapshotWorkbook(record, XLSX) {
   return XLSX.write(wb, { bookType:'xlsx', type:'base64', compression:true });
 }
 
+export function sessionFilenameLabel(snapshot) {
+  return String(snapshot.participantIndex || snapshot.parentEmail || '').trim()
+    .replace(/[^A-Za-z0-9@._+-]/g, '_').slice(0, 254);
+}
+
 export function googleDriveFetch({ XLSX = () => window.XLSX, fetchImpl = (...args) => fetch(...args) } = {}) {
   const ready = new Set();
   return async (endpoint, options) => {
@@ -30,8 +35,9 @@ export function googleDriveFetch({ XLSX = () => window.XLSX, fetchImpl = (...arg
       ready.add(endpoint);
     }
     const record = JSON.parse(options.body);
-    const filename = `cake_${record.sessionId}.xlsx`;
-    const body = new URLSearchParams({ protocol:'cake-session-upsert-v1', filename, filedata:snapshotWorkbook(record, XLSX()), filetype:'excel', sessionId:record.sessionId,
+    const filenameLabel = sessionFilenameLabel(record.snapshot);
+    const filename = `cake_${filenameLabel ? filenameLabel + '_' : ''}${record.sessionId}.xlsx`;
+    const body = new URLSearchParams({ protocol:'cake-session-upsert-v1', filename, filenameLabel, filedata:snapshotWorkbook(record, XLSX()), filetype:'excel', sessionId:record.sessionId,
       revision:String(record.revision), writeToken:record.writeToken, sessionStatus:record.snapshot.sessionStatus,
       snapshotReason:record.snapshot.saveCheckpoint || '' });
     const response = await fetchImpl(endpoint, { method:'POST', mode:'cors', body, signal:options.signal, credentials:'omit' });
@@ -39,7 +45,7 @@ export function googleDriveFetch({ XLSX = () => window.XLSX, fetchImpl = (...arg
     const ack = await response.json();
     if (ack.status !== 'success' || ack.protocol !== 'cake-session-upsert-v1' || ack.sessionId !== record.sessionId ||
         ack.revision !== record.revision || !Number.isSafeInteger(ack.storedRevision) || ack.storedRevision < record.revision ||
-        ack.fileName !== filename || typeof ack.fileId !== 'string' || !ack.fileId) throw new Error('Google Drive did not confirm this session revision');
+        (ack.fileName !== filename && !(ack.storedRevision > record.revision && typeof ack.fileName === 'string' && ack.fileName.startsWith('cake_') && ack.fileName.endsWith(`_${record.sessionId}.xlsx`))) || typeof ack.fileId !== 'string' || !ack.fileId) throw new Error('Google Drive did not confirm this session revision');
     return { ok:true, json:async () => ({ saved:true, sessionId:record.sessionId, revision:record.revision, savedAt:new Date().toISOString(), fileId:ack.fileId, fileName:ack.fileName }) };
   };
 }

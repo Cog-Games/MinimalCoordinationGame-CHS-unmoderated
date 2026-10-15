@@ -54,3 +54,12 @@ assert.equal(post({revision:'3',sessionStatus:'completed',filedata:finalBytes}).
 assert.equal(files.size,1);assert.equal(files.get(first.fileId).appProperties.sessionStatus,'completed');
 assert.equal(post({sessionId:'d'.repeat(32)}).status,'success');assert.equal(files.size,2);
 console.log('PASS: one file per session, stable ID, retry idempotency, ordered revisions, write-token protection, completion protection and failed-write recovery.');
+const museum=post({sessionId:'e'.repeat(32)});
+const named=post({sessionId:'e'.repeat(32),revision:'2',filenameLabel:'M001'});
+assert.equal(named.fileId,museum.fileId);
+assert.equal(named.fileName,`cake_M001_${'e'.repeat(32)}.xlsx`);
+assert.equal(post({sessionId:'e'.repeat(32)}).fileName,named.fileName,'stale unnamed upload must not rename the file');
+assert.equal(post({sessionId:'e'.repeat(32),revision:'2',filenameLabel:'M001'}).disposition,'unchanged');
+const email=post({sessionId:'f'.repeat(32),filenameLabel:'parent+study@example.com'});
+assert.equal(email.fileName,`cake_parent+study@example.com_${'f'.repeat(32)}.xlsx`);
+console.log('PASS: participant-labelled filenames, same-ID rename after intake, stale request protection and email labels.');

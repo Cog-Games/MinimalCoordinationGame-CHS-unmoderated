@@ -30,7 +30,8 @@ function doPost(event) {
     if (!p.filedata || p.filedata.length > 20000000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(p.filedata)) throw new Error('Invalid workbook');
     const bytes = Utilities.base64Decode(p.filedata);
     if (bytes[0] !== 80 || bytes[1] !== 75) throw new Error('Expected XLSX workbook');
-    const fileName = `cake_${sessionId}.xlsx`;
+    const filenameLabel = String(p.filenameLabel || '').trim().replace(/[^A-Za-z0-9@._+-]/g, '_').slice(0, 254);
+    const fileName = `cake_${filenameLabel ? filenameLabel + '_' : ''}${sessionId}.xlsx`;
     const tokenHash = digest_(p.writeToken);
     const contentHash = digest_(p.filedata);
     lock.waitLock(25000);

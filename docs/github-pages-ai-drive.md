@@ -32,3 +32,9 @@ Solo practice hides the three reward boxes and chef labels, retaining Cowlie. Pa
 Local evidence is under `output/session-upsert-validation/`, including cloud acknowledgements, downloaded workbook, audit report, expected snapshot, reloaded local backup and screenshots. Test data is labeled TEST/validationOnly where supported and is not participant data.
 
 The storage validation page runs only through the development server and is not a Vite production entry. It writes synthetic test sessions to the configured live Drive endpoint when its Run button is pressed. The live verification script also requires explicit `--live`. Do not use real participant snapshots as test fixtures.
+
+## Museum intake and labelled filenames (2026-10-15)
+
+Use `?setting=museum` for in-person sessions. This retains DOB and replaces parent email with a required participant index (for example M001). Indices are normalized to uppercase and allow letters, digits, hyphens and underscores, up to 40 characters. The default entry retains parent email. Both modes export `studySetting` and `participantIndex` alongside existing participant fields.
+
+Apps Script version 6 accepts a filename label while still looking up files by session ID. Once intake is submitted, the existing session workbook is renamed to `cake_M001_<sessionId>.xlsx` or `cake_parent@example.com_<sessionId>.xlsx`. Unsupported filename characters are replaced with underscores. The session suffix distinguishes separate visits with the same index/email. Older revisions cannot rename newer files. Existing historical files are unchanged unless their active session sends a newer snapshot.
