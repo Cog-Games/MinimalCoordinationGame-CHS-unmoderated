@@ -28,8 +28,10 @@ export class TimelineManager {
       participantAgeMonths: null,
       participantAgeDays: null,
       participantAgeTotalDays: null,
+      participantIndex: null,
+      studySetting: this.getStudySetting(),
       parentEmail: null,
-      parentEmailUse: 'payment_and_child_certificate_only',
+      parentEmailUse: this.getStudySetting() === 'remote' ? 'payment_and_child_certificate_only' : null,
       dataSaveCheckpointTimes: {},
       totalScore: 0,
       completed: false
@@ -527,8 +529,12 @@ export class TimelineManager {
     });
   }
 
+  getStudySetting() {
+    return new URLSearchParams(window.location.search).get('setting') === 'remote' ? 'remote' : 'museum';
+  }
+
   showStartStage() {
-    const museumMode = new URLSearchParams(window.location.search).get('setting') === 'museum';
+    const museumMode = this.getStudySetting() === 'museum';
     this.container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
         <div style="background: white; padding: 36px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 560px; width: calc(100% - 40px); text-align: center;">
