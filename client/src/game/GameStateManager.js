@@ -1,3 +1,4 @@
+import { jsonClone, newId } from '../data/ResearchDataStore.js';
 import { CONFIG, GAME_OBJECTS, DIRECTIONS, GameConfigUtils } from '../config/gameConfig.js';
 import { GameHelpers } from '../utils/GameHelpers.js';
 
@@ -133,6 +134,12 @@ export class GameStateManager {
     // (RL planner, reward calculator) can read per-map fields like
     // `utility_summary`, `stag`, `rabbits`, etc.
     this.currentMapDesign = design || null;
+    Object.assign(this.trialData, {
+      trialId: newId(), events: [], status: 'active', success: null,
+      terminationReason: null, timeout: false, endTime: null,
+      finalState: null, completed: false, totalSteps: 0,
+      rtDefinition: 'cumulative execution elapsed milliseconds'
+    });
     this.trialData.trialIndex = trialIndex;
     this.trialData.experimentType = experimentType;
     this.trialData.partnerAgentType = this.getPartnerAgentType(experimentType);
@@ -317,7 +324,35 @@ export class GameStateManager {
     } catch (e) {
       console.warn('⚠️ Failed to attach StagHunt metadata to trialData:', e?.message || e);
     }
+    this.trialData.mapDesign = jsonClone(design || {});
+    this.trialData.actualRewards = {
+      initialPoints: this.trialData.player1CurrentPoints,
+      stepPenalty: this.getStepPenaltyForCurrentTrial(),
+      smallGoalReward: design?.utility_summary?.hare_reward_each ?? CONFIG.game.rewards.smallGoalReward,
+      bigGoalJointReward: design?.utility_summary?.stag_reward_each ?? CONFIG.game.rewards.bigGoalJointReward
+    };
+    this.trialData.trialKind = this.currentState.player2 ? 'paired' : 'solo';
+    if (!this.currentState.player2) {
+      this.trialData.partnerAgentType = null;
+      this.trialData.aiPlayerIndex = null;
+      this.trialData.player2Role = null;
+      this.trialData.player2CurrentPoints = 0;
+      this.currentState.player2CurrentPoints = 0;
+    }
+    this.recordEvent('trial_started', { state: this.currentState });
   }
+
+  recordEvent(type, detail = {}) {
+    if (!this.trialData?.trialId || this.trialData._finalized) return;
+    this.trialData.events.push({
+      eventIndex: this.trialData.events.length, turnId: this.stepCount,
+      at: Date.now(), elapsedMs: Date.now() - this.gameStartTime,
+      monotonicMs: globalThis.performance?.now?.() ?? null,
+      type, ...jsonClone(detail)
+    });
+    this.onDataChange?.(type);
+  }
+
 
   initializeScoreStateForTrial(experimentType) {
     const rewardsCfg = CONFIG?.game?.rewards || {};
@@ -642,9 +677,10 @@ export class GameStateManager {
         return { success: false, reason: 'invalid_direction' };
       }
 
+      const stateBefore = jsonClone(this.currentState);
       // Record the move
       // Ensure gameStartTime is valid (not 0 or very old timestamp)
-      if (this.gameStartTime === 0 || (Date.now() - this.gameStartTime) > 60000) {
+      if (this.gameStartTime === 0) {
         console.warn('Invalid gameStartTime detected, resetting to current time');
         this.gameStartTime = Date.now();
       }
@@ -666,6 +702,7 @@ export class GameStateManager {
 
       // Check for trial completion
       const trialComplete = this.checkTrialCompletion();
+      this.recordEvent('turn_committed', { turnId: this.stepCount - 1, actor: playerIndex, direction, stateBefore, stateAfter: this.currentState });
 
       return {
         success: true,
@@ -730,7 +767,8 @@ export class GameStateManager {
       const move1 = humanDirection ? DIRECTIONS[`arrow${humanDirection}`]?.movement : null;
       const move2 = aiDirection ? DIRECTIONS[`arrow${aiDirection}`]?.movement : null;
 
-      // Record reaction time once for the step
+      const stateBefore = jsonClone(this.currentState);
+      // Legacy elapsed execution time once for the step
       const reactionTime = Date.now() - this.gameStartTime;
 
       // Compute next positions safely
@@ -768,6 +806,7 @@ export class GameStateManager {
       // Check completion
       results.trialComplete = this.checkTrialCompletion();
       results.newPositions = { player1: next1, player2: next2 };
+      this.recordEvent('turn_committed', { turnId: this.stepCount - 1, actions: [humanDirection, aiDirection], stateBefore, stateAfter: this.currentState });
       return results;
     } finally {
       setTimeout(() => {
@@ -995,7 +1034,7 @@ export class GameStateManager {
     return this.stepCount >= CONFIG.game.maxGameLength;
   }
 
-  finalizeTrial(success) {
+  finalizeTrial(success, result = {}) {
     // Prevent duplicate finalization
     if (this.trialData._finalized) {
       console.warn('Trial already finalized, skipping duplicate finalization');
@@ -1018,7 +1057,14 @@ export class GameStateManager {
       }
     } catch (_) { /* noop */ }
 
-    this.trialData.completed = !!success;
+    this.trialData.completed = !!success; // Legacy meaning retained; use status for completion.
+    this.trialData.success = !!success;
+    this.trialData.status = 'ended';
+    this.trialData.timeout = !!result.timeout;
+    const actors = [this.currentState.player1, this.currentState.player2].filter(Boolean);
+    const goalsResolved = actors.length > 0 && actors.every(player => GameHelpers.isGoalReached(player, this.currentState.currentGoals));
+    this.trialData.terminationReason = result.terminationReason || (result.timeout ? 'time_limit' :
+      (goalsResolved ? 'goals_resolved' : (this.stepCount >= CONFIG.game.maxGameLength ? 'step_limit' : 'other')));
     this.trialData.endTime = Date.now();
     this.trialData.totalSteps = this.stepCount;
 
@@ -1063,7 +1109,16 @@ export class GameStateManager {
     this.fixMissingGoalValues();
 
     // Add to experiment data (use deep clone to avoid shared array references across trials)
-    const snapshot = JSON.parse(JSON.stringify(this.trialData));
+    if (!this.currentState.player2) {
+      this.trialData.partnerAgentType = null;
+      this.trialData.aiPlayerIndex = null;
+      this.trialData.player2Role = null;
+    }
+    this.trialData.finalState = jsonClone(this.currentState);
+    this.trialData.player1FinalPosition = this.currentState.player1 ? [...this.currentState.player1] : null;
+    this.trialData.player2FinalPosition = this.currentState.player2 ? [...this.currentState.player2] : null;
+    this.recordEvent('trial_ended', { terminationReason: this.trialData.terminationReason, success: !!success });
+    const snapshot = jsonClone(this.trialData);
     this.experimentData.allTrialsData.push(snapshot);
 
     // Mark as finalized to prevent duplicates
@@ -1071,6 +1126,7 @@ export class GameStateManager {
 
     // Update success threshold tracking
     this.updateSuccessThreshold(success);
+    this.onDataChange?.('trial_complete');
   }
 
   computeRewardsForTrial({ commitResolvedOnly = false } = {}) {

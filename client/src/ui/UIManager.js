@@ -268,6 +268,7 @@ export class UIManager {
       if (validKeys.includes(key)) {
         event.preventDefault();
         const direction = key.replace('Arrow', '').toLowerCase();
+        this.emit('research-input', { direction, repeat: event.repeat, inputAt: Date.now(), browserEventTimeStamp: event.timeStamp });
         this.emit('player-move', direction);
       }
     };

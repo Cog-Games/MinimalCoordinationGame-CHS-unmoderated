@@ -13,7 +13,11 @@
     "start": "node server/index.js",
     "render-build": "npm install && vite build",
     "test:stag-dp": "node tests/stag-variable-dp.test.mjs",
-    "test:stag-legal-turns": "node tests/stag-legal-turns.test.mjs"
+    "test:stag-legal-turns": "node tests/stag-legal-turns.test.mjs",
+    "test:storage": "node tests/research-storage.test.mjs",
+    "test:lan": "node tests/lan-play.test.mjs",
+    "build:pages": "VITE_STATIC_AI=true VITE_RESEARCH_STORAGE=google-drive VITE_ENABLE_GOOGLE_DRIVE_SAVE=false vite build",
+    "test:drive": "node tests/google-drive-transport.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

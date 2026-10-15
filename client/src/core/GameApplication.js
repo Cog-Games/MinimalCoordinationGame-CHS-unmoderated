@@ -1,3 +1,5 @@
+import { googleDriveFetch } from '../data/GoogleDriveTransport.js';
+import { ResearchDataStore, jsonClone } from '../data/ResearchDataStore.js';
 import { NetworkManager } from '../network/NetworkManager.js';
 import { GameStateManager } from '../game/GameStateManager.js';
 import { UIManager } from '../ui/UIManager.js';
@@ -17,6 +19,8 @@ export class GameApplication {
     this.playerIndex = 0; // 0 = red player, 1 = purple player
     this.gameConfig = null; // Store game configuration from server
     this.useTimelineFlow = true; // Enable timeline flow by default
+    this.dataStore = null;
+    this.dyadId = null;
     this.currentRoomId = null; // Track active multiplayer room ID for export
 
     // Synchronized human-human turn state
@@ -40,13 +44,16 @@ export class GameApplication {
   }
 
   async start(options = {}) {
-    const { mode = 'human-ai', experimentType = '2P2G', roomId = null, useTimeline = true } = options;
+    let { mode = 'human-ai', experimentType = '2P2G', roomId = null, useTimeline = true } = options;
 
     // Check URL parameters for timeline preference
     const urlParams = new URLSearchParams(window.location.search);
     this.useTimelineFlow = urlParams.get('timeline') !== 'false' && useTimeline;
     const aiParam = urlParams.get('ai');
-    if (aiParam) {
+    if (CONFIG.server.staticAI) {
+      mode = 'human-ai';
+      GameConfigUtils.setPlayerType(2, 'rl_joint');
+    } else if (aiParam) {
       // Accept: 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_joint' | 'rl_individual' | 'we_intent_js' | legacy 'ai'
       GameConfigUtils.setPlayerType(2, aiParam);
     }
@@ -81,6 +88,7 @@ export class GameApplication {
 
     // Initialize core managers
     this.gameStateManager = new GameStateManager();
+    this.setupResearchStorage();
     this.uiManager = new UIManager(this.container);
 
     // Initialize timeline manager if using timeline flow
@@ -98,7 +106,7 @@ export class GameApplication {
 
     // Initialize network manager if needed
     const urlParams = new URLSearchParams(window.location.search);
-    const skipNetwork = urlParams.get('skipNetwork') === 'true';
+    const skipNetwork = CONFIG.server.staticAI || urlParams.get('skipNetwork') === 'true';
 
     if (!skipNetwork) {
       try {
@@ -121,6 +129,7 @@ export class GameApplication {
     this.setupUIEventHandlers();
 
     this.isInitialized = true;
+    this.persistResearchSnapshot('session_started');
 
     // Make GameApplication available globally for ExperimentManager communication
     try { window.__GAME_APPLICATION__ = this; } catch (_) { /* ignore */ }
@@ -134,7 +143,7 @@ export class GameApplication {
 
     // Check if we should skip network connection for testing
     const urlParams = new URLSearchParams(window.location.search);
-    const skipNetwork = urlParams.get('skipNetwork') === 'true';
+    const skipNetwork = CONFIG.server.staticAI || urlParams.get('skipNetwork') === 'true';
 
     // Default to configured fallback AI when not explicitly set
     if (!['gpt', 'gpt-ToM', 'vlm', 'vlm-ToM', 'human', 'rl_joint', 'rl_individual', 'rl_individual_python', 'we_intent_js'].includes(CONFIG.game.players.player2.type)) {
@@ -378,6 +387,67 @@ export class GameApplication {
     console.log('📡 Timeline event handlers setup completed');
   }
 
+  setupResearchStorage() {
+    this.dataStore = new ResearchDataStore({
+      endpoint: CONFIG.server.researchStorage === 'google-drive' ? CONFIG.server.googleAppsScriptUrl : `${CONFIG.server.url.replace(/\/$/, '')}/api/research/snapshots`,
+      fetchImpl: googleDriveFetch(),
+      onStatus: (status, detail) => {
+        if (status === 'server' && (detail?.sessionId !== this.dataStore.sessionId || detail.revision !== this.dataStore.revision)) return;
+        if (status === 'local-error') this.localBackupFailed = true;
+        if (status === 'local') this.localBackupFailed = false;
+        this.lastStorageStatus = { status, at: new Date().toISOString() };
+        const label = document.getElementById('research-save-status');
+        const messages = { local: 'Saved on this device', server: CONFIG.server.researchStorage === 'google-drive' ? 'Saved to Google Drive' : 'Saved to study computer',
+          pending: 'Upload pending — keep this page or download a backup',
+          'local-error': 'Device backup unavailable — download a backup' };
+        if (label) label.textContent = status === 'pending' && this.localBackupFailed
+          ? 'Data is not saved — keep this page open and download a backup' : (messages[status] || status);
+        if (status === 'server' && detail?.sessionId === this.dataStore.sessionId && detail.revision === this.dataStore.revision && this.timelineManager?.experimentData?.completed) {
+          this.timelineManager?.emit('data-save-success');
+        }
+      }
+    });
+    const panel = document.createElement('aside');
+    panel.id = 'research-save-panel';
+    panel.style.cssText = 'position:fixed;bottom:4px;left:8px;z-index:10000;font:12px sans-serif;background:#fff;padding:4px 8px;border:1px solid #ddd;border-radius:6px;max-width:90vw';
+    const label = document.createElement('span');
+    label.id = 'research-save-status'; label.setAttribute('role', 'status');
+    label.textContent = 'Preparing data backup';
+    const button = document.createElement('button');
+    button.textContent = 'Download backup'; button.style.marginLeft = '8px';
+    button.onclick = async () => {
+      await this.persistResearchSnapshot('manual_backup');
+      const data = await this.dataStore.exportLocal();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url;
+      link.download = `cake-data-backup-${Date.now()}.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    panel.append(label, button); document.body.append(panel);
+    this.gameStateManager.onDataChange = reason => this.persistResearchSnapshot(reason);
+    this.storageInterval = setInterval(() => {
+      if (!this.timelineManager?.experimentData?.completed) this.persistResearchSnapshot('periodic');
+      void this.dataStore.flush();
+    }, 15000);
+    this.storageOnlineHandler = () => this.dataStore.flush();
+    this.storagePageHandler = () => this.persistResearchSnapshot('pagehide');
+    this.storageVisibilityHandler = () => {
+      this.gameStateManager.recordEvent('visibility', { visibility: document.visibilityState });
+      this.persistResearchSnapshot('visibility');
+    };
+    window.addEventListener('online', this.storageOnlineHandler);
+    window.addEventListener('pagehide', this.storagePageHandler);
+    document.addEventListener('visibilitychange', this.storageVisibilityHandler);
+    void this.dataStore.flush(); // Recover pending records from earlier page loads.
+  }
+
+  persistResearchSnapshot(checkpoint = 'autosave') {
+    if (!this.dataStore) return Promise.resolve();
+    return this.saveExperimentData(this.timelineManager?.experimentData || {}, {
+      checkpoint, rawOnly: true, notifyTimeline: false, showAlert: false
+    });
+  }
+
   async saveExperimentData(data, options = {}) {
     // Save/export experiment data in legacy-compatible shape
     try {
@@ -426,7 +496,7 @@ export class GameApplication {
           'prolific_pid',
           'participantId',
           'participant_id'
-        ]) || lookitResponseId || `participant_${Date.now()}`;
+        ]) || lookitResponseId || `participant_${this.dataStore?.sessionId || Date.now()}`;
       }
 
       // Determine room id (from runtime or payload)
@@ -466,9 +536,34 @@ export class GameApplication {
         waitingDetails: data.waitingDetails || []
       };
 
-      const dataStr = JSON.stringify(exportObj, null, 2);
+      Object.assign(exportObj, {
+        sessionId: this.dataStore?.sessionId || null,
+        dyadId: this.dyadId,
+        currentPlayer: this.playerIndex + 1,
+        dataSchemaVersion: '3.0.0',
+        build: typeof __BUILD_INFO__ !== 'undefined' ? __BUILD_INFO__ : { commit: 'unbundled', dirty: true },
+        flow: new URLSearchParams(window.location.search).get('lan') === 'true' ? 'lan-quick-play' : (this.useTimelineFlow ? 'study-timeline' : 'legacy'),
+        gameConfig: jsonClone(CONFIG.game),
+        assignedMapOrder: Object.fromEntries(Object.entries(this.experimentManager?.sampledMapsByExperiment || {}).map(([type, maps]) =>
+          [type, maps.map(map => ({ mapId: map.map_id, sourceMapId: map.source_map_id, rotation: map.rotation_degrees, phase: map.trial_phase }))])),
+        activeTrial: this.gameStateManager?.trialData?.trialId && !this.gameStateManager.trialData._finalized
+          ? { ...jsonClone(this.gameStateManager.trialData), state: jsonClone(this.gameStateManager.currentState) } : null,
+        sessionStatus: data.completed ? 'completed' : 'in_progress',
+        rtDefinition: 'Legacy playerNRT is cumulative execution elapsed ms, not individual decision RT',
+        agentActionOrder: ['left', 'right', 'up', 'down']
+      });
+      exportObj.allTrialsData = exportObj.allTrialsData.map(trial => ({
+        ...trial, sessionId: exportObj.sessionId, dyadId: exportObj.dyadId,
+        sharedTrialId: exportObj.dyadId ? `${exportObj.dyadId}:${trial.experimentType}:${trial.trialIndex}` : null,
+        cupcakeWidgetRedOnRight: exportObj.cupcakeWidgetRedOnRight
+      }));
+      if (this.dataStore) {
+        await this.dataStore.save(exportObj);
+        if (['trial_complete', 'pagehide', 'manual_backup', 'questionnaire_complete', 'lan_complete', 'session_started'].includes(saveCheckpoint)) void this.dataStore.flush();
+      }
+      if (options.rawOnly || CONFIG.server.researchStorage === 'google-drive') return exportObj;
 
-      // Do not save locally (no localStorage / no file download)
+      // Optional legacy mirror. Authoritative saving above does not depend on XLSX.
 
       // Try legacy-style Google Drive save via Apps Script using SheetJS if available
       const scriptUrl = CONFIG.server.googleAppsScriptUrl;
@@ -487,6 +582,7 @@ export class GameApplication {
             const processed = trials.map(t => {
               const o = {};
               for (const k in t) {
+                if (k === 'events' || k === 'dpDecisions') continue; // One event per row below.
                 const v = t[k];
                 // Flatten arrays/objects for Excel cells
                 o[k] = (Array.isArray(v) || (v && typeof v === 'object')) ? JSON.stringify(v) : v;
@@ -562,6 +658,17 @@ export class GameApplication {
             XLSX.utils.book_append_sheet(wb, ws, 'ExperimentData');
           }
 
+          for (const [field, sheetName] of [['events', 'Events'], ['dpDecisions', 'AgentDecisions']]) {
+            const rows = [['sessionId', 'trialId', 'trialIndex', 'turnId', 'type', 'at', 'elapsedMs', 'payload']];
+            for (const trial of trials) {
+              for (const event of trial[field] || []) {
+                rows.push([exportObj.sessionId, trial.trialId, trial.trialIndex, event.turnId ?? event.step,
+                  event.type || 'dp_decision', event.at ?? '', event.elapsedMs ?? '', JSON.stringify(event)]);
+              }
+            }
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sheetName);
+          }
+
           // Meta sheet
           // Determine partner agent type summary for meta
           const p2Type = (CONFIG?.game?.players?.player2?.type) || '';
@@ -590,7 +697,8 @@ export class GameApplication {
           // Calculate collaboration success statistics
           const allTrials = exportObj.allTrialsData || [];
           const collaborationTrials = allTrials.filter(trial =>
-            trial.experimentType && GameConfigUtils.isTwoPlayerExperiment(trial.experimentType)
+            trial.experimentType && GameConfigUtils.isTwoPlayerExperiment(trial.experimentType) &&
+            trial.trialPhase === 'main' && !!trial.player2StartPosition
           );
           const collaborationSuccessCount = collaborationTrials.filter(trial =>
             trial.collaborationSucceeded === true
@@ -600,6 +708,11 @@ export class GameApplication {
             : 0;
 
           const metaRows = [
+            ['sessionId', exportObj.sessionId],
+            ['dyadId', exportObj.dyadId || ''],
+            ['dataSchemaVersion', exportObj.dataSchemaVersion],
+            ['build', JSON.stringify(exportObj.build)],
+            ['cupcakeWidgetRedOnRight', exportObj.cupcakeWidgetRedOnRight],
             ['participantId', exportObj.participantId],
             ['lookitResponseId', exportObj.lookitResponseId || ''],
             ['lookitChildId', exportObj.lookitChildId || ''],
@@ -691,9 +804,21 @@ export class GameApplication {
           }
           XLSX.utils.book_append_sheet(wb, qSheet, 'Questionnaire');
 
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+            ['Question', 'Attempts', 'FirstAttemptCorrect', 'FinalAnswer', 'History'],
+            ...(exportObj.comprehensionCheckData?.questions || []).map(q => [q.name, q.attempts, q.firstAttemptCorrect, q.finalAnswer, JSON.stringify(q.history || [])])
+          ]), 'Comprehension');
+          const { allTrialsData: _trials, activeTrial: _active, ...sessionMetadata } = exportObj;
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
+            Object.entries(sessionMetadata).map(([key, value]) => [key, typeof value === 'object' ? JSON.stringify(value) : value])
+          ), 'SessionMetadata');
+
           // Write workbook and send to Apps Script
           const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-          const base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(wbout)));
+          const bytes = new Uint8Array(wbout);
+          let binary = '';
+          for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+          const base64 = btoa(binary);
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
           const safeId = String(exportObj.participantId).replace(/[^a-zA-Z0-9_-]/g, '_');
           const safeRoom = String(exportObj.roomId || 'no-room').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -708,26 +833,16 @@ export class GameApplication {
           fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: formData })
             .then(() => {
               console.log(`✅ Google Drive save attempted via Apps Script (${saveCheckpoint})`);
-              // Provide user feedback like legacy and notify timeline
-              try {
-                if (notifyTimeline && this.timelineManager) {
-                  this.timelineManager.emit('data-save-success');
-                }
-                if (showAlert) {
-                  alert('Data saved successfully!');
-                }
-              } catch (e) {
-                // Ignore UI feedback errors
-              }
+              // Opaque no-cors response is not evidence of successful remote storage.
             })
             .catch(err => {
-              console.warn('⚠️ Google Drive save failed. Local saving is disabled.', err);
+              console.warn('⚠️ Google Drive save failed. Raw JSON remains available through the research data store.', err);
             });
         } catch (e) {
-          console.warn('⚠️ Excel/Apps Script save failed. Local saving is disabled.', e);
+          console.warn('⚠️ Excel/Apps Script save failed. Raw JSON remains available through the research data store.', e);
         }
       } else {
-        console.warn('⚠️ Google Drive save disabled or XLSX not available. Local saving is disabled.');
+        console.warn('⚠️ Google Drive save disabled or XLSX not available. Raw JSON remains available through the research data store.');
       }
     } catch (error) {
       console.error('Failed to save/export experiment data:', error);
@@ -782,6 +897,7 @@ export class GameApplication {
       console.log('Room joined:', data);
       if (data && data.roomId) {
         this.currentRoomId = data.roomId;
+        this.dyadId = data.dyadId || null;
         // Expose room id and a deterministic session seed for client-side sync logic
         try {
           window.__ROOM_ID__ = data.roomId;
@@ -1072,6 +1188,7 @@ export class GameApplication {
     });
 
     // Game actions
+    this.uiManager.on('research-input', detail => this.gameStateManager.recordEvent('human_input', { actor: this.playerIndex + 1, clock: 'local_device', ...detail }));
     this.uiManager.on('player-move', async (direction) => {
       // Always allow free movement in single-player experiments (1P1G, 1P2G)
       try {
@@ -1612,6 +1729,11 @@ export class GameApplication {
 
   // Cleanup
   destroy() {
+    clearInterval(this.storageInterval);
+    window.removeEventListener('online', this.storageOnlineHandler);
+    window.removeEventListener('pagehide', this.storagePageHandler);
+    document.removeEventListener('visibilitychange', this.storageVisibilityHandler);
+    document.getElementById('research-save-panel')?.remove();
     // Stop real-time synchronization
     this.stopRealTimeSync();
 

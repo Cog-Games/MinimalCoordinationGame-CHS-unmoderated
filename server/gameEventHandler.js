@@ -13,6 +13,7 @@ export class GameEventHandler {
         socket.join(room.id);
         socket.emit('room-joined', {
           roomId: room.id,
+          dyadId: room.dyadId,
           gameMode: room.gameMode,
           experimentType: room.experimentType,
           players: room.players,

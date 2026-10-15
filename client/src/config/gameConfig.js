@@ -29,6 +29,8 @@ export const CONFIG = {
 
   // Server configuration
   server: {
+    staticAI: getEnvVar('VITE_STATIC_AI', 'false') === 'true',
+    researchStorage: getEnvVar('VITE_RESEARCH_STORAGE', 'server'),
     // Point to same-origin server by default (single-service deploy)
     url: getEnvVar('VITE_SERVER_URL', defaultServerUrl),
     reconnectAttempts: 3,

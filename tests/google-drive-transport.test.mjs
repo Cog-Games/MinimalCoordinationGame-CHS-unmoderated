@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { snapshotWorkbook, googleDriveFetch } from '../client/src/data/GoogleDriveTransport.js';
+const c={};vm.createContext(c);vm.runInContext(fs.readFileSync('client/public/vendor/xlsx.full.min.js','utf8'),c);
+const snapshot={ sessionId:'a'.repeat(32), dataSchemaVersion:'3.0.0', allTrialsData:[{trialIndex:0,trialId:'solo',status:'ended'}], note:'儿童🧁'.repeat(20000), cupcakeWidgetRedOnRight:false };
+const record={sessionId:snapshot.sessionId,revision:7,snapshot};
+const wb=c.XLSX.read(snapshotWorkbook(record,c.XLSX),{type:'base64'});
+const rows=c.XLSX.utils.sheet_to_json(wb.Sheets.RawJSON,{header:1}).slice(1);
+assert(rows.length>1);assert(rows.every(r=>r[1].length<=24000));
+assert.deepEqual(JSON.parse(Buffer.from(rows.map(r=>r[1]).join(''),'base64').toString('utf8')),snapshot);
+let sent;
+const make = result => googleDriveFetch({ XLSX:()=>c.XLSX,fetchImpl:async (_url,opts)=>{sent=opts;return {ok:true,json:async()=>typeof result==='function'?result(opts):result};} });
+const endpoint='https://script.google.com/macros/s/test/exec';
+const response=await make(o=>({status:'success',fileId:'test-file',fileName:o.body.get('filename')}))(endpoint,{body:JSON.stringify(record)});
+assert.equal((await response.json()).revision,7);assert.equal(sent.mode,'cors');assert.equal(sent.body.get('filetype'),'excel');assert.equal(sent.body.has('writeToken'),false);
+for(const result of [{status:'ignored'},{status:'success',fileId:'wrong',fileName:'other.xlsx'}]) await assert.rejects(()=>make(result)(endpoint,{body:JSON.stringify(record)}));
+console.log('PASS: complete Unicode snapshot round-trip, bounded cells, matching Drive acknowledgement, ignored/wrong-file rejection.');

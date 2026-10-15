@@ -1086,6 +1086,8 @@ export class TimelineManager {
     ];
 
     const results = [];
+    let questionShownAt = Date.now();
+    this.experimentData.comprehensionCheck = { experimentType, questions: results };
     let qIndex = 0;
     // Randomize (50/50) which side each answer appears on, once per question so
     // the order stays put if the participant retries after a wrong answer.
@@ -1119,10 +1121,13 @@ export class TimelineManager {
         displayOrder: displayOrders[qIndex].map((i) => q.options[i])
       };
       attemptRecord.attempts += 1;
+      (attemptRecord.history ||= []).push({ answer: q.options[idx], answerIndex: idx, correct, at: Date.now(), elapsedSinceQuestionShownMs: Date.now() - questionShownAt });
       if (attemptRecord.firstAttemptCorrect === null) {
         attemptRecord.firstAttemptCorrect = correct;
       }
+      if (correct) attemptRecord.finalAnswer = q.options[idx];
       results[qIndex] = attemptRecord;
+      window.__GAME_APPLICATION__?.persistResearchSnapshot?.('comprehension_answer');
 
       if (!correct) {
         renderQuestion(true);
@@ -1133,6 +1138,7 @@ export class TimelineManager {
 
       if (qIndex < questions.length - 1) {
         qIndex += 1;
+        questionShownAt = Date.now();
         renderQuestion(false);
       } else {
         finish();
@@ -1690,7 +1696,7 @@ export class TimelineManager {
     }
 
     // Stag Hunt shows the cupcake/cake widget row beneath the grid, so reserve room for it
-    const showCakeRow = GameConfigUtils.isStagHuntExperiment(experimentType);
+    const showCakeRow = GameConfigUtils.isStagHuntExperiment(experimentType) && !(experimentType === 'StagHunt' && trialIndex === 0 && CONFIG.game.experiments.stagHuntPhaseRounds?.[0] === 1);
     const cakeRowMargin = 12;
     const reservedHeight = 125 + (showCakeRow ? WIDGET_ROW_HEIGHT + cakeRowMargin : 0);
     const cakeRowSlot = showCakeRow
@@ -2045,6 +2051,8 @@ export class TimelineManager {
           btn.addEventListener('click', () => {
             const idx = Number(btn.getAttribute('data-idx') || '0');
             answers[q.name] = q.options[idx];
+            this.experimentData.questionnaire = { ...answers };
+            this.requestDataSaveCheckpoint('questionnaire_answer');
 
             if (synth) synth.cancel();
             if (currentAudio) {

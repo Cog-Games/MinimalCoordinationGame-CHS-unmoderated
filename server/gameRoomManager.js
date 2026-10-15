@@ -6,8 +6,8 @@ export class GameRoomManager {
     this.playerRooms = new Map(); // Track which room each player is in
   }
 
-  createRoom(gameMode = 'human-ai', experimentType = '2P2G') {
-    const roomId = uuidv4();
+  createRoom(gameMode = 'human-ai', experimentType = '2P2G', requestedRoomId = null) {
+    const roomId = requestedRoomId || uuidv4();
     const room = {
       id: roomId,
       gameMode, // 'human-ai' or 'human-human'
@@ -16,6 +16,7 @@ export class GameRoomManager {
       gameState: null,
       status: 'waiting', // 'waiting', 'playing', 'finished'
       createdAt: new Date(),
+      dyadId: uuidv4(),
       maxPlayers: gameMode === 'human-human' ? 2 : 1
     };
     
@@ -28,6 +29,9 @@ export class GameRoomManager {
     
     if (roomId) {
       room = this.rooms.get(roomId);
+      if (!room && gameMode === 'human-human' && experimentType === 'StagHunt' && /^lan-[a-zA-Z0-9_-]{1,48}$/.test(roomId)) {
+        room = this.createRoom(gameMode, experimentType, roomId);
+      }
       if (!room) {
         throw new Error('Room not found');
       }
