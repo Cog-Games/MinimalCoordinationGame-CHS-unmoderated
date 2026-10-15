@@ -19,7 +19,7 @@ The `codex/drive-session-upsert` change requires deploying `server/google-apps-s
 
 Deployment sequence:
 1. Open the existing study owner's Apps Script project. Preserve its current source/version before replacing handlers, and check whether unrelated studies share the endpoint.
-2. Enable Advanced Drive service v3. The replacement uses the existing private `testExp1` folder; it does not change sharing or delete historical files.
+2. Enable Advanced Drive service v3. The replacement uses the new private `Stag Hunt` folder (`1N2Ko4FmapcRfLxP2OFVOF03M2K06AO_Z`); it does not change sharing or delete historical files.
 3. Deploy a new version of the existing web-app deployment, retaining its existing access settings and URL. If Google requests a new authorization grant, the owner must review it.
 4. Check GET returns `protocol: cake-session-upsert-v1`. Send a synthetic session revision 1, revision 2, duplicate revision 2, then a completed revision. Confirm every acknowledgement returns the same file ID and that Drive contains exactly one matching workbook. Read back its RawJSON and verify the final revision, all trials, comprehension, and questionnaire.
 5. Only after that check, publish the frontend from this change to Pages and verify a browser save and local backup.

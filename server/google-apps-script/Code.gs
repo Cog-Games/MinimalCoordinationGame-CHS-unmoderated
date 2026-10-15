@@ -1,6 +1,6 @@
 // Deploy as a web app executing as the existing study owner.
 // Enable the Advanced Drive service v3. Keep the existing folder private.
-const STUDY_FOLDER_ID = '1d8S_QSY0JrJ0K3Qz3Jn7rNIsedTL7grC';
+const STUDY_FOLDER_ID = '1N2Ko4FmapcRfLxP2OFVOF03M2K06AO_Z';
 const WORKBOOK_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 function jsonResponse_(value) {
