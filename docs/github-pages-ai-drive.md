@@ -1,6 +1,6 @@
 # AI-only GitHub Pages deployment
 
-Build with `npm run build:pages`. The `codex/pages-ai-drive` workflow publishes to `gh-pages`. The browser runs the discounted joint DP agent without an embedded API key.
+Build with `npm run build:pages`. The `codex/museum-default-entry` workflow publishes to `gh-pages`. The browser runs the discounted joint DP agent without an embedded API key.
 
 Game: https://cog-games.github.io/MinimalCoordinationGame-CHS-unmoderated/
 
@@ -42,6 +42,6 @@ Apps Script version 6 accepts a filename label while still looking up files by s
 
 ## Museum-default branch deployment
 
-`codex/museum-default-entry` is a source branch prepared for manual deployment by the study owner. Pushing it does not trigger the existing workflow, whose automatic trigger remains `codex/pages-ai-drive`. To publish this branch, run **Deploy to GitHub Pages** manually in GitHub Actions and select `codex/museum-default-entry`. The workflow builds with `npm run build:pages` and publishes the output to `gh-pages`. Keep Pages configured to serve `gh-pages` at `/ (root)`; do not point Pages directly at the source branch.
+`codex/museum-default-entry` is the active source branch. Each push automatically runs **Deploy to GitHub Pages**. Manual runs can also select this branch. The superseded `codex/drive-session-upsert` and `codex/pages-ai-drive` branches have been fully merged into this history and can be removed. The workflow builds with `npm run build:pages` and publishes the output to `gh-pages`. Keep Pages configured to serve `gh-pages` at `/ (root)`; do not point Pages directly at the source branch.
 
 After deployment, the bare game URL opens museum intake. Append `?setting=remote` for email intake. Both retain the existing one-workbook-per-session Drive service.
