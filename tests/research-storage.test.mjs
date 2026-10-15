@@ -111,7 +111,7 @@ try {
   globalThis.window = { location: { origin: 'http://test.invalid', search: '' }, io: null };
   const { GameApplication } = await import('../client/src/core/GameApplication.js');
   let workbook; let notifications = [];
-  window.XLSX = { utils: { book_new: () => ({ sheets: {} }), aoa_to_sheet: r => r, book_append_sheet: (b,r,n) => b.sheets[n] = r }, write: b => { workbook = b; return new Uint8Array([1]); } };
+  window.XLSX = { utils: { book_new: () => ({ sheets: {}, SheetNames: [], Sheets: {} }), aoa_to_sheet: r => r, book_append_sheet: (b,r,n) => { b.sheets[n] = r; b.SheetNames.push(n); b.Sheets[n] = {}; } }, write: b => { workbook = b; return new Uint8Array([1]); } };
   const game = Object.create(GameApplication.prototype);
   Object.assign(game, { gameStateManager: gs, playerIndex: 0, timelineManager: { emit: e => notifications.push(e) }, experimentManager: { cakeVisualization: { redOnRight: true } } });
   gs.experimentData.allTrialsData.push({ trialId: 'practice', experimentType: 'StagHunt', trialPhase: 'onboarding', player2StartPosition: null, collaborationSucceeded: true });

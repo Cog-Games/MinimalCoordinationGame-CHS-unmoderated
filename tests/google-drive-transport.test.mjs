@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { snapshotWorkbook, googleDriveFetch } from '../client/src/data/GoogleDriveTransport.js';
 const c={};vm.createContext(c);vm.runInContext(fs.readFileSync('client/public/vendor/xlsx.full.min.js','utf8'),c);
-const snapshot={ sessionId:'a'.repeat(32), dataSchemaVersion:'3.0.0', allTrialsData:[{trialIndex:0,trialId:'solo',status:'ended'}], note:'儿童🧁'.repeat(20000), cupcakeWidgetRedOnRight:false };
+const snapshot={ sessionId:'a'.repeat(32), dataSchemaVersion:'3.0.0', allTrialsData:[{trialIndex:0,trialId:'solo',status:'ended', experimentType:'StagHunt',trialPhase:'main',player2StartPosition:[0,0],player1Actions:[[1,0]],events:[{type:'trial_end',turnId:1}],dpDecisions:[{step:0,action:3}]}], note:'儿童🧁'.repeat(20000), cupcakeWidgetRedOnRight:false, currentPlayer:1, questionnaire:{ai_detection:'Computer', collaboration_rating:'Good collaborator',play_again:'Yes'}, comprehensionCheckData:{questions:[{name:'big_quantity',attempts:2,firstAttemptCorrect:false,finalAnswer:'5',displayOrder:['1','5'],history:[{answer:'1',correct:false},{answer:'5',correct:true}]}]} };
 const record={sessionId:snapshot.sessionId,revision:7,snapshot};
 const wb=c.XLSX.read(snapshotWorkbook(record,c.XLSX),{type:'base64'});
 const rows=c.XLSX.utils.sheet_to_json(wb.Sheets.RawJSON,{header:1}).slice(1);
@@ -16,3 +16,16 @@ const response=await make(o=>({status:'success',fileId:'test-file',fileName:o.bo
 assert.equal((await response.json()).revision,7);assert.equal(sent.mode,'cors');assert.equal(sent.body.get('filetype'),'excel');assert.equal(sent.body.has('writeToken'),false);
 for(const result of [{status:'ignored'},{status:'success',fileId:'wrong',fileName:'other.xlsx'}]) await assert.rejects(()=>make(result)(endpoint,{body:JSON.stringify(record)}));
 console.log('PASS: complete Unicode snapshot round-trip, bounded cells, matching Drive acknowledgement, ignored/wrong-file rejection.');
+
+for(const name of ['ExperimentData','Events','AgentDecisions','Meta','ParticipantInfo','CollaborationSummary','Questionnaire','Comprehension','SessionMetadata']) assert(wb.Sheets[name],name);
+const table = name => c.XLSX.utils.sheet_to_json(wb.Sheets[name]);
+assert.equal(table('ExperimentData')[0].currentPlayer,1);
+assert.equal(table('ExperimentData')[0].player1Actions,'[[1,0]]');
+assert.equal(table('Events')[0].type,'trial_end');
+assert.equal(table('AgentDecisions').length,1);
+assert.equal(table('Questionnaire')[0].play_again,'Yes');
+assert.equal(table('Comprehension')[0].Attempts,2);
+assert.equal(table('Comprehension')[0].DisplayOrder,'["1","5"]');
+const extra = table('Overflow').filter(r=>r.sheet==='SessionMetadata');
+assert.equal(extra.map(r=>r.text).join(''),snapshot.note);
+console.log('PASS: legacy worksheets, actions, event and decision rows, questionnaire, comprehension retry/order, lossless oversized fields.');

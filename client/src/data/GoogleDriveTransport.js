@@ -1,9 +1,10 @@
+import { experimentWorkbook } from './ExperimentWorkbook.js';
 // The existing Apps Script saves Excel files and returns their Drive IDs.
 // Keep the complete snapshot in lossless, bounded base64 chunks inside the workbook.
 export function snapshotWorkbook(record, XLSX) {
   if (!XLSX) throw new Error('Excel exporter is unavailable');
-  const wb = XLSX.utils.book_new();
   const s = record.snapshot;
+  const wb = experimentWorkbook(s, XLSX);
   const add = (name, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
   add('Session', [['sessionId', record.sessionId], ['revision', record.revision], ['schema', s.dataSchemaVersion], ['checkpoint', s.saveCheckpoint], ['status', s.sessionStatus], ['commit', s.build?.commit], ['sourceHash', s.build?.sourceHash], ['cupcakeWidgetRedOnRight', s.cupcakeWidgetRedOnRight], ['rawEncoding', 'UTF-8 JSON encoded as base64; concatenate RawJSON column B in row order and decode']]);
   add('Trials', [['trialIndex','trialId','phase','status','terminationReason','steps','player1Reward','player2Reward'], ...(s.allTrialsData || []).map(t => [t.trialIndex,t.trialId,t.trialPhase,t.status,t.terminationReason,t.totalSteps,t.player1Reward,t.player2Reward])]);
