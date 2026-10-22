@@ -10,7 +10,8 @@ import {RLAgent} from '../client/src/ai/RLAgent.js';
 const fixtures=JSON.parse(await readFile(new URL('./fixtures/stag-variable-dp-reference.json',import.meta.url)));
 const rotate=([r,c],k)=>{for(let i=0;i<k;i++)[r,c]=[c,8-r];return[r,c]};
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-10,`${a} != ${b}`);
-const dp=new DiscountedJointDP();
+// Preserve the historical fixtures as a regression check under their original utility.
+const dp=new DiscountedJointDP({cost:.9,tau:.2,jointStagReward:10});
 const loader=Object.create(MapLoader.prototype);
 const originalLog=console.log;console.log=()=>{};
 try{
@@ -40,7 +41,7 @@ try{
  assert.equal(gsm.currentState.player1CurrentPoints,0);assert.equal(gsm.getStepPenaltyForCurrentTrial(),0);gsm.applyStepPenalty(1);assert.equal(gsm.currentState.player1CurrentPoints,0);
  assert.equal(gsm.trialData.player1Role,'Signaler');assert.equal(gsm.trialData.player2Role,'Signaler');
  const rl=new RLAgent();let recorded;
- const action=rl.getAIAction(gsm.currentState.gridMatrix,gsm.currentState.player2,gsm.currentState.currentGoals,gsm.currentState.player1,{experimentType:'StagHunt',goalTypes:gsm.currentState.currentGoalTypes,completedTurns:59,recordDPDecision:d=>recorded=d});assert.equal(recorded.remainingTurns,1);assert(DP_ACTIONS.some(d=>d[0]===action[0]&&d[1]===action[1]));
+ const action=rl.getAIAction(gsm.currentState.gridMatrix,gsm.currentState.player2,gsm.currentState.currentGoals,gsm.currentState.player1,{experimentType:'StagHunt',goalTypes:gsm.currentState.currentGoalTypes,completedTurns:59,recordDPDecision:d=>recorded=d});assert.equal(recorded.parameters.cost,.30);assert.equal(recorded.parameters.tau,.10);assert.equal(recorded.parameters.jointStagReward,5);assert.equal(recorded.parameters.policyVersion,'shared-cakes-step-beta3-v1');assert.equal(recorded.remainingTurns,1);assert(DP_ACTIONS.some(d=>d[0]===action[0]&&d[1]===action[1]));
  gsm.currentState.player1=[...m.rabbits[0]];gsm.checkTrialCompletion();assert.equal(gsm.currentState.player1CurrentPoints,0); // Deferred settlement.
  gsm.currentState.player2=[...m.rabbits[0]];assert(gsm.checkTrialCompletion());assert.equal(gsm.currentState.player1CurrentPoints,.5);assert.equal(gsm.currentState.player2CurrentPoints,.5);
  gsm.initializeTrial(1,'StagHunt',m);assert.deepEqual(gsm.trialData.dpDecisions,[]);gsm.currentState.player1=[...m.stag];gsm.currentState.player2=[...m.stag];assert(gsm.checkTrialCompletion());assert.equal(gsm.currentState.player1CurrentPoints,5);assert.equal(gsm.currentState.player2CurrentPoints,5);
