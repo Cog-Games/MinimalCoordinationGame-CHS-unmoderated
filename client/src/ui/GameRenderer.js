@@ -1,4 +1,4 @@
-import { CONFIG, GAME_OBJECTS } from '../config/gameConfig.js';
+import { CONFIG, GAME_OBJECTS, GameConfigUtils } from '../config/gameConfig.js';
 
 const assetBase = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
 const assetUrl = (name) => `${assetBase}${name}`.replace(/([^:])\/\//, '$1/');
@@ -163,6 +163,26 @@ export class GameRenderer {
 
     // Draw game objects
     this.drawGameObjects(gameState.gridMatrix);
+    this.drawPracticeGuidance();
+  }
+
+  drawPracticeGuidance() {
+    const state = this.gameState, cue = state?.practiceGuidance;
+    if (!cue || !GameConfigUtils.getStagHuntScriptedRound(state.experimentType, state.trialIndex)) return;
+    const [r,c] = cue.target, player = state[`player${cue.player}`];
+    if (player?.[0] === r && player?.[1] === c) return;
+    const size = this.cellSize, x = c*this.effectiveCellSize+this.padding, y = r*this.effectiveCellSize+this.padding;
+    const ctx = this.ctx;
+    ctx.save();
+    // Highlight the destination; the arrow marks the oven, not a prescribed route.
+    ctx.strokeStyle = '#e49a00'; ctx.lineWidth = Math.max(2,size*.045);
+    ctx.strokeRect(x+size*.04,y+size*.04,size*.92,size*.92);
+    ctx.beginPath();
+    for (const [i,[dx,dy]] of [[.43,-.47],[.57,-.47],[.57,-.18],[.73,-.18],[.5,.05],[.27,-.18],[.43,-.18]].entries()) {
+      if(i===0)ctx.moveTo(x+size*dx,y+size*dy);else ctx.lineTo(x+size*dx,y+size*dy);
+    }
+    ctx.closePath();ctx.fillStyle='#ffd43b';ctx.strokeStyle='#493400';ctx.lineWidth=Math.max(2,size*.03);ctx.fill();ctx.stroke();
+    ctx.restore();
   }
 
   drawGrid() {

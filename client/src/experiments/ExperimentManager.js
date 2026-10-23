@@ -467,20 +467,21 @@ export class ExperimentManager {
   getPlannerAction(gameState) {
     const aiPos = (this.aiPlayerNumber === 1) ? gameState.player1 : gameState.player2;
     const partnerPos = (this.aiPlayerNumber === 1) ? gameState.player2 : gameState.player1;
-    const td = this.gameStateManager.getCurrentTrialData();
+    // Scripted target/start must persist across moves; the public getter returns a copy.
+    const td = this.gameStateManager.trialData;
     const script = GameConfigUtils.getStagHuntScriptedRound(gameState.experimentType, td?.trialIndex);
-    if (script) return this.getScriptedAction(gameState, aiPos, script.partner, td);
+    if (script) return this.getScriptedAction(gameState, aiPos, script.partner, td, script.partnerPath);
     return this.rlAgent.getAIAction(gameState.gridMatrix, aiPos, gameState.currentGoals, partnerPos, this.buildRLContext(gameState));
   }
 
   // Shortest-path step toward the scripted oven type ('small' = the small oven
   // nearest the AI, chosen once per trial). Logged like a planner decision.
-  getScriptedAction(gameState, aiPos, targetType, td) {
+  getScriptedAction(gameState, aiPos, targetType, td, pathType = null) {
     const goals = gameState.currentGoals || [];
     const goalTypes = gameState.currentGoalTypes || [];
     const sameCell = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
     const record = (decision) => {
-      if (td) (td.dpDecisions ||= []).push({ step: this.gameStateManager.stepCount, policy: 'scripted', targetType, aiPosition: [...aiPos], ...decision });
+      if (td) (td.dpDecisions ||= []).push({ step: this.gameStateManager.stepCount, policy: 'scripted', targetType, pathType, aiPosition: [...aiPos], ...decision });
     };
 
     // Like the planner, the AI stays put once it has reached any oven
@@ -491,13 +492,33 @@ export class ExperimentManager {
 
     const grid = gameState.gridMatrix;
     const size = grid.length;
+    // Practice-only branch constraint, rotated with the player's corner.
+    // After this opening move, BFS continues toward Stag without entering a Hare.
+    let opening = null;
+    if (pathType) {
+      if (!td || targetType !== 'big' || !['clear-stag', 'ambiguous-stag'].includes(pathType)) {
+        throw new Error('Invalid scripted Stag route');
+      }
+      td.scriptedRouteStart ||= [...aiPos];
+      td.scriptedPartnerPath = pathType;
+      let corner = [0, 0], delta = pathType === 'clear-stag' ? [0, 1] : [1, 0];
+      for (let k = 0; k < 4 && !sameCell(corner, td.scriptedRouteStart); k++) {
+        corner = [corner[1], size - 1 - corner[0]];
+        delta = [delta[1], -delta[0]];
+      }
+      if (!sameCell(corner, td.scriptedRouteStart)) throw new Error('Scripted route requires a corner start');
+      if (sameCell(aiPos, td.scriptedRouteStart)) opening = delta;
+    }
     const firstStep = new Map(); // "r,c" -> action index of the first move on the shortest path
     const distance = new Map([[`${aiPos[0]},${aiPos[1]}`, 0]]);
     const queue = [aiPos];
     while (queue.length) {
       const [r, c] = queue.shift();
       DP_ACTIONS.forEach(([dr, dc], a) => {
+        if (opening && r === aiPos[0] && c === aiPos[1] && (dr !== opening[0] || dc !== opening[1])) return;
         const nr = r + dr, nc = c + dc, key = `${nr},${nc}`;
+        // Any oven locks movement, so a route must never pass through another type.
+        if (goals.some((g, i) => sameCell(g, [nr, nc]) && goalTypes[i] !== targetType)) return;
         if (nr < 0 || nc < 0 || nr >= size || nc >= size || distance.has(key)) return;
         if (grid[nr][nc] === GAME_OBJECTS.obstacle) return;
         distance.set(key, distance.get(`${r},${c}`) + 1);
@@ -1607,7 +1628,12 @@ export class ExperimentManager {
       this.cakeVisualization.hide();
     }
 
-    this.uiManager.showTrialFeedbackInContainer(success, canvasContainer, messageType);
+    // Keep the result visible until both its minimum display time and voice line finish.
+    data.feedbackFinished = Promise.all([
+      new Promise(resolve => setTimeout(resolve, CONFIG.game.timing.feedbackDisplayDuration)),
+      this.cakeVisualization.voiceLineFinished
+    ]);
+    this.uiManager.showTrialFeedbackInContainer(success, canvasContainer, messageType, data.feedbackFinished);
   }
 
   // Public API

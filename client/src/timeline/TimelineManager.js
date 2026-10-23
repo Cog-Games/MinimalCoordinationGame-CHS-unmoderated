@@ -293,9 +293,9 @@ export class TimelineManager {
   /**
    * Custom 5-phase study structure for Stag Hunt:
    *   Phase 1: instructions (video 1) -> 1 practice round
-   *   Phase 2: partner intro (video 2) -> matchmaking -> 4 rounds (1st is practice)
+   *   Phase 2: partner intro (video 2) -> 4 guided practice rounds
    *   Phase 3: comprehension check
-   *   Phase 4: 16 rounds
+   *   Phase 4: free-choice intro -> matchmaking -> 16 rounds
    *   Phase 5: questionnaire (added by the caller, after all experiments)
    * Trial indices run continuously (0-20) across all three trial blocks so map
    * sampling (keyed by experimentType + total trial count) stays consistent.
@@ -321,7 +321,7 @@ export class TimelineManager {
     });
     addGameRounds(PHASE1_ROUNDS);
 
-    // --- Game 2 (Phase 2): partner intro (video 2) -> matchmaking -> rounds ---
+    // --- Game 2 (Phase 2): partner intro (video 2) -> guided rounds ---
     this.stages.push({
       type: 'instructions',
       experimentType: 'StagHunt_partner_intro',
@@ -329,6 +329,26 @@ export class TimelineManager {
       handler: () => this.showInstructionsStage('StagHunt_partner_intro', experimentIndex)
     });
 
+    this.stages.push({
+      type: 'practice_guidance_intro', experimentType, experimentIndex,
+      handler: () => this.showPracticeChoiceInstructions(false)
+    });
+
+    addGameRounds(PHASE2_ROUNDS);
+
+    // --- Phase 3: comprehension check ---
+    this.stages.push({
+      type: 'comprehension_check',
+      experimentType,
+      experimentIndex,
+      handler: () => this.showCupcakeComprehensionCheckStage(experimentType, experimentIndex)
+    });
+
+    // --- Game 3 (Phase 4): remaining rounds ---
+    this.stages.push({
+      type: 'free_choice_intro', experimentType, experimentIndex,
+      handler: () => this.showPracticeChoiceInstructions(true)
+    });
     this.stages.push({
       type: 'waiting_for_partner',
       experimentType,
@@ -344,18 +364,20 @@ export class TimelineManager {
     });
     this.hasShownPartnerFindingStage = true;
 
-    addGameRounds(PHASE2_ROUNDS);
-
-    // --- Phase 3: comprehension check ---
-    this.stages.push({
-      type: 'comprehension_check',
-      experimentType,
-      experimentIndex,
-      handler: () => this.showCupcakeComprehensionCheckStage(experimentType, experimentIndex)
-    });
-
-    // --- Game 3 (Phase 4): remaining rounds ---
     addGameRounds(PHASE4_ROUNDS);
+  }
+
+  showPracticeChoiceInstructions(freeChoice) {
+    const title = freeChoice ? "You're ready to play!" : "Let's practice by following instructions!";
+    const text = freeChoice
+      ? 'Practice is finished! Now you’ll play with another chef. In the next games, you and the other chef can each choose which oven to go to. There will be no arrows telling you where to go.'
+      : 'For the next four practice rounds, we will tell you and the other chef which oven to go to. Follow the arrow to your oven. After practice, you can choose for yourself.';
+    this.container.innerHTML = `<div style="min-height:90vh;display:flex;align-items:center;justify-content:center;background:#f8f9fa;padding:24px"><div style="max-width:760px;text-align:center;background:white;padding:40px;border-radius:16px"><h1>${title}</h1><p style="font-size:26px;line-height:1.6">${text}</p><button id="practice-choice-continue" style="font-size:26px;padding:14px 32px;background:#28a745;color:white;border:0;border-radius:10px">${freeChoice ? 'Continue' : 'Start practice'}</button></div></div>`;
+    const button = document.getElementById('practice-choice-continue');
+    button.onclick = () => {
+      button.disabled = true;
+      this.nextStage();
+    };
   }
 
   /**
@@ -363,6 +385,20 @@ export class TimelineManager {
    */
   start() {
     this.createTimelineStages();
+    // Local rehearsal only: preserve original trial indices/map sampling and retries.
+    if (['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) &&
+        this.getBooleanUrlParam(['practiceOnly', 'practiceFlowTest'])) {
+      const flowTest = this.getBooleanUrlParam(['practiceFlowTest']);
+      this.stages = this.stages.filter(stage => stage.experimentType === 'StagHunt' &&
+        ((flowTest && ['practice_guidance_intro', 'comprehension_check', 'free_choice_intro', 'waiting_for_partner', 'match_play'].includes(stage.type)) ||
+         (['fixation', 'trial', 'post-trial'].includes(stage.type) && stage.trialIndex >= 1 && stage.trialIndex <= (flowTest ? 5 : 4))));
+      this.stages.push({ type: 'practice_test_complete', handler: () => {
+        this.container.innerHTML = `<div style="padding:60px;text-align:center"><h1>Practice test complete</h1><p>${flowTest ? 'The practice instructions, four guided rounds, comprehension check, free-choice instructions, matchmaking, and one free-choice round are complete.' : 'All four guided rounds are complete.'} Refresh to test again.</p></div>`;
+      }});
+      this.currentStageIndex = 0;
+      this.runCurrentStage();
+      return;
+    }
     if (this.shouldStartDirectlyAtGame()) {
       const firstTrialStageIndex = this.stages.findIndex(stage => stage.type === 'trial');
       this.currentStageIndex = firstTrialStageIndex >= 0 ? firstTrialStageIndex : 0;
@@ -380,6 +416,7 @@ export class TimelineManager {
    * Run the current stage
    */
   runCurrentStage() {
+    this._waitingCleanup?.();
     if (this.currentStageIndex >= this.stages.length) {
       console.log('🏁 Timeline completed!');
       return;
@@ -1283,16 +1320,11 @@ export class TimelineManager {
   }
 
   showWaitingForPartnerStage(experimentType, experimentIndex) {
-    // Configurable min/max wait windows (fallback to legacy single value)
-    const minWaitMs = (CONFIG?.game?.timing?.waitingForPartnerMinDuration)
-      || (CONFIG?.game?.timing?.waitingForPartnerDuration) || 5000;
-    const maxWaitMs = (CONFIG?.game?.timing?.waitingForPartnerMaxDuration) || 15000;
-    const readyAt = Date.now() + minWaitMs;
+    this._waitingCleanup?.();
+    const minWaitMs = Math.max(9000, CONFIG.game.timing.waitingForPartnerMinDuration || 9000);
+    const maxWaitMs = Math.max(minWaitMs, CONFIG.game.timing.waitingForPartnerMaxDuration || 9000);
+    const waitingStartTime = Date.now(), readyAt = waitingStartTime + minWaitMs;
     let partnerFound = false;
-
-    // Record waiting start time
-    const waitingStartTime = Date.now();
-    console.log('⏱️ [WAITING] Partner search started at:', new Date(waitingStartTime).toISOString());
     this.container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
         <div id="waiting-room" style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px; text-align: center;">
@@ -1320,107 +1352,55 @@ export class TimelineManager {
       </style>
     `;
 
-    // If player2 is NOT human, only wait for the minimum duration, then proceed
-    const isP2Human = (CONFIG?.game?.players?.player2?.type === 'human');
-    if (!isP2Human) {
-      this.gameMode = 'human-ai';
-      setTimeout(() => {
-        // Ensure we still reflect a non-human partner; keep current type (ai or gpt)
-        this.nextStage();
-      }, Math.max(0, readyAt - Date.now()));
-      return;
-    }
-
-    // HUMAN-HUMAN FLOW BELOW
-    // Add spacebar skip option for testing (only allowed after minimum wait window)
-    const handleSkipWaiting = (event) => {
-      if (event.code === 'Space' || event.key === ' ') {
-        event.preventDefault();
-        if (Date.now() < readyAt) return; // enforce minimum wait
-
-        // Record waiting end time and duration for skip
-        const waitingEndTime = Date.now();
-        const waitingDuration = waitingEndTime - waitingStartTime;
-        console.log('⏱️ [WAITING] Skipped after waiting duration:', waitingDuration + 'ms (' + (waitingDuration / 1000).toFixed(1) + 's)');
-
-        // Store waiting time data for export
-        this.recordWaitingTime(waitingStartTime, waitingEndTime, waitingDuration, 'skip', experimentType, experimentIndex);
-
-        document.removeEventListener('keydown', handleSkipWaiting);
-        console.log('⏭️ Skipping multiplayer waiting after min wait - continuing with AI partner');
-        const fallbackType = (CONFIG?.multiplayer?.fallbackAIType) || 'rl_joint';
-        GameConfigUtils.setPlayerType(2, fallbackType);
-        try { this.emit('fallback-to-ai', { reason: 'waiting-skip', stage: 'waiting-for-partner', at: Date.now(), fallbackAIType: fallbackType }); } catch (_) { /* noop */ }
-        this.nextStage();
-      }
+    let finished = false, lastEnterAt = null;
+    const timers = new Set();
+    const schedule = (fn, delay) => timers.add(setTimeout(fn, delay));
+    const cleanup = () => {
+      finished = true;
+      timers.forEach(clearTimeout);
+      document.removeEventListener('keydown', handleKey, true);
+      this.off('partner-connected', connected);
+      if (this._waitingCleanup === cleanup) this._waitingCleanup = null;
     };
-    document.addEventListener('keydown', handleSkipWaiting);
-
-    // Attempt real partner connection for human-human
-    this.emit('waiting-for-partner', { experimentType, experimentIndex });
-
-    // Optional cancel button behavior
-    const cancelBtn = document.getElementById('cancel-wait-btn');
-    if (cancelBtn) {
-      cancelBtn.onclick = () => {
-        console.log('⚠️ Waiting canceled by user');
-        window.close();
-      };
-    }
-
-    // When partner connects, advance to the match stage after minimum wait
-    const partnerConnectedHandler = (payload) => {
-      console.log('👥 Partner connected - will advance after minimum waiting time', payload);
-      this.gameMode = 'human-human';
-      partnerFound = true;
-
-      // Record waiting end time and duration
-      const waitingEndTime = Date.now();
-      const waitingDuration = waitingEndTime - waitingStartTime;
-      console.log('⏱️ [WAITING] Partner found! Waiting duration:', waitingDuration + 'ms (' + (waitingDuration / 1000).toFixed(1) + 's)');
-
-      // Store waiting time data for export
-      this.recordWaitingTime(waitingStartTime, waitingEndTime, waitingDuration, 'partner_found', experimentType, experimentIndex);
-
-      document.removeEventListener('keydown', handleSkipWaiting);
-      this.off('partner-connected', partnerConnectedHandler);
-      let targetAt = readyAt;
-      if (payload && payload.connectedAt) {
-        const serverTarget = payload.connectedAt + minWaitMs;
-        targetAt = Math.max(targetAt, serverTarget);
-      }
-      const delay = Math.max(0, targetAt - Date.now());
-      setTimeout(() => this.nextStage(), delay);
-    };
-
-    // Ensure single handler for this stage
-    this.eventHandlers.delete('partner-connected');
-    this.on('partner-connected', partnerConnectedHandler);
-
-    // Fallback after maximum wait if no partner connected
-    setTimeout(() => {
-      if (!partnerFound) {
-        // Record waiting end time and duration for timeout
-        const waitingEndTime = Date.now();
-        const waitingDuration = waitingEndTime - waitingStartTime;
-        console.log('⏱️ [WAITING] Timeout after waiting duration:', waitingDuration + 'ms (' + (waitingDuration / 1000).toFixed(1) + 's)');
-
-        // Store waiting time data for export
-        this.recordWaitingTime(waitingStartTime, waitingEndTime, waitingDuration, 'timeout', experimentType, experimentIndex);
-
-        console.log(`⌛ No partner found after ${maxWaitMs}ms - falling back to AI mode`);
-        const fallbackType = (CONFIG?.multiplayer?.fallbackAIType) || 'rl_joint';
+    const finish = (reason) => {
+      if (finished) return;
+      const end = Date.now();
+      this.recordWaitingTime(waitingStartTime, end, end - waitingStartTime, reason, experimentType, experimentIndex);
+      if (CONFIG.game.players.player2.type === 'human' && !partnerFound) {
+        const fallbackType = CONFIG.multiplayer.fallbackAIType || 'rl_joint';
         GameConfigUtils.setPlayerType(2, fallbackType);
         this.gameMode = 'human-ai';
-        document.removeEventListener('keydown', handleSkipWaiting);
-        // Notify app to record this fallback event
-        try { this.emit('fallback-to-ai', { reason: 'waiting-timeout', stage: 'waiting-for-partner', at: Date.now(), fallbackAIType: fallbackType }); } catch (_) { /* noop */ }
-        // Notify ExperimentManager to activate AI fallback
-        try { if (!CONFIG?.debug?.disableConsoleLogs) console.log(`[DEBUG] Timeline emitting ai-fallback-activated event (waiting timeout)`); } catch (_) {}
+        this.emit('fallback-to-ai', { reason: `waiting-${reason}`, stage: 'waiting-for-partner', at: end, fallbackAIType: fallbackType });
         this.emit('ai-fallback-activated', { fallbackType, aiPlayerNumber: 2 });
-        this.nextStage();
       }
-    }, maxWaitMs);
+      cleanup();
+      this.nextStage();
+    };
+    const handleKey = (event) => {
+      if (event.key !== 'Enter' || event.repeat || event.isComposing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const now = Date.now();
+      if (lastEnterAt !== null && now - lastEnterAt <= 600) finish('hidden-double-enter');
+      else lastEnterAt = now;
+    };
+    const connected = (payload) => {
+      if (finished || partnerFound) return;
+      partnerFound = true;
+      this.gameMode = 'human-human';
+      const target = Math.max(readyAt, (payload?.connectedAt || waitingStartTime) + minWaitMs);
+      schedule(() => finish('partner_found'), Math.max(0, target - Date.now()));
+    };
+    this._waitingCleanup = cleanup;
+    document.addEventListener('keydown', handleKey, true);
+    if (CONFIG.game.players.player2.type !== 'human') {
+      this.gameMode = 'human-ai';
+      schedule(() => finish('ai-ready'), Math.max(0, readyAt - Date.now()));
+      return;
+    }
+    this.on('partner-connected', connected);
+    schedule(() => { if (!partnerFound) finish('timeout'); }, maxWaitMs);
+    this.emit('waiting-for-partner', { experimentType, experimentIndex });
   }
 
   showReadyToPlayStage(experimentType, experimentIndex) {
@@ -1758,7 +1738,7 @@ export class TimelineManager {
         if (!this.experimentData.experiments[experimentType]) {
           this.experimentData.experiments[experimentType] = [];
         }
-        this.experimentData.experiments[experimentType].push(result);
+        this.experimentData.experiments[experimentType].push({ ...result, trialIndex });
 
         // Update success threshold tracking for collaboration experiments
         if (GameConfigUtils.isTwoPlayerExperiment(experimentType) && CONFIG.game.successThreshold.enabled) {
@@ -1773,7 +1753,10 @@ export class TimelineManager {
 
   showPostTrialStage(experimentType, experimentIndex, trialIndex, fullTitle = null) {
     // Get the last trial result
-    const trialResult = this.experimentData.experiments[experimentType]?.[trialIndex];
+    // Standalone practice starts at trial 1, so array offsets are not trial IDs.
+    const trialResult = this.experimentData.experiments[experimentType]?.findLast(
+      result => (result.trialIndex ?? result.trialData?.trialIndex ?? result.gameState?.trialIndex) === trialIndex
+    );
     const success = trialResult?.success || false;
     const totalRounds = GameConfigUtils.getNumTrials(experimentType);
     const totalGames = CONFIG?.game?.experiments?.order?.length || 1;
@@ -1807,8 +1790,10 @@ export class TimelineManager {
       this.emit('show-trial-feedback', feedbackData);
     }
 
-    // Auto-advance after feedback duration
-    setTimeout(() => {
+    // Voice feedback can be longer than the minimum visual feedback duration.
+    const stageIndex = this.currentStageIndex;
+    const advance = () => {
+      if (this.currentStageIndex !== stageIndex) return;
       console.log(`📊 Post-trial feedback completed for trial ${trialIndex}`);
 
       if (feedbackData.scriptedRetry) {
@@ -1839,7 +1824,9 @@ export class TimelineManager {
         // Normal progression for non-collaboration experiments
         this.nextStage();
       }
-    }, CONFIG.game.timing.feedbackDisplayDuration);
+    };
+    if (feedbackData.feedbackFinished) Promise.resolve(feedbackData.feedbackFinished).then(advance, advance);
+    else setTimeout(advance, CONFIG.game.timing.feedbackDisplayDuration);
   }
 
   showGameFeedbackStage() {

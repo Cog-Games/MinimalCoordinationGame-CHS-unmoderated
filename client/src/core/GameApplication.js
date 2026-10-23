@@ -353,13 +353,7 @@ export class GameApplication {
       });
     });
 
-    // Handle trial feedback event
-    this.timelineManager.on('show-trial-feedback', (data) => {
-      console.log('📊 Timeline requesting trial feedback:', data);
-      if (this.experimentManager) {
-        this.experimentManager.handleTrialFeedback(data);
-      }
-    });
+    // ExperimentManager owns show-trial-feedback; avoid duplicate overlays and retry processing.
 
     // Handle any multiplayer-specific timeline events
     this.timelineManager.on('partner-connected', () => {

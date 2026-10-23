@@ -107,9 +107,9 @@ export const CONFIG = {
       stagHuntScriptedRounds: [
         { human: 'small', partner: 'small', audio: 'Round 1.m4a',
           text: "Let's practice! You go to a small oven, and the other chef goes to a small oven too." },
-        { human: 'big', partner: 'big', audio: 'Round 2.m4a',
+        { human: 'big', partner: 'big', partnerPath: 'clear-stag', audio: 'Round 2.m4a',
           text: "Let's practice! You and the other chef both go to the big oven." },
-        { human: 'small', partner: 'big', audio: 'Round 3.m4a',
+        { human: 'small', partner: 'big', partnerPath: 'ambiguous-stag', audio: 'Round 3.m4a',
           text: "Let's practice! You go to a small oven, and the other chef goes to the big oven." },
         { human: 'big', partner: 'small', audio: 'Round 4.m4a',
           text: "Let's practice! You go to the big oven, and the other chef goes to a small oven." }
@@ -162,8 +162,8 @@ export const CONFIG = {
       // Legacy behavior had no time cap; only step-based via maxGameLength.
       maxTrialDurationMs: 60 * 1000,
       // Minimum and maximum time to wait for partner (ms)
-      waitingForPartnerMinDuration: 1 * 1000, // 9*1000, 9s
-      waitingForPartnerMaxDuration: 1 * 1000 // 300*1000, 5mins
+      waitingForPartnerMinDuration: 9 * 1000, // Minimum visible pairing wait
+      waitingForPartnerMaxDuration: 9 * 1000 // Fall back to AI if no partner arrives
     },
 
     // AI agent settings

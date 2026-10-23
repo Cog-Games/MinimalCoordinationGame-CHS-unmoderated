@@ -1,3 +1,4 @@
+import { practiceGuidance } from '../utils/PracticeGuidance.js';
 import { jsonClone, newId } from '../data/ResearchDataStore.js';
 import { CONFIG, GAME_OBJECTS, DIRECTIONS, GameConfigUtils } from '../config/gameConfig.js';
 import { GameHelpers } from '../utils/GameHelpers.js';
@@ -158,6 +159,9 @@ export class GameStateManager {
     this.trialData.currentPlayerIndex = [];
     this.trialData.gptErrorEvents = [];
     this.trialData.dpDecisions = [];
+    this.trialData.scriptedRouteStart = null;
+    this.trialData.scriptedPartnerTarget = null;
+    this.trialData.scriptedPartnerPath = null;
     this.trialData.player1StartPosition = null;
     this.trialData.player2StartPosition = null;
     this.trialData.initialGoalPositions = [];
@@ -254,6 +258,8 @@ export class GameStateManager {
     // Update current state
     this.currentState.experimentType = experimentType;
     this.currentState.trialIndex = trialIndex;
+    this.currentState.practiceGuidance = practiceGuidance(this.currentState);
+    this.trialData.practiceGuidance = this.currentState.practiceGuidance;
     this.currentState.moveMode = GameConfigUtils.getMoveMode(experimentType);
     this.currentState.playerStartPositionsSwapped = !!design?.playerStartPositionsSwapped;
     this.currentState.currentTurnPlayer = GameConfigUtils.isTurnTakingEnabled(experimentType)

@@ -169,9 +169,11 @@ export class CakeVisualization {
     this.cowIdleSrc = assetUrl('birthday_Cowlie_framed.png');
     this.cowCelebrateSrc = assetUrl('birthday-cow-celebration.gif');
     this.cupcakeSrc = assetUrl('cupcake.png');
-    this.voiceBatchSrc = assetUrl('Yay 5 cupcakes.mp4');
-    this.voiceCupcakeSrc = assetUrl('Yay a cupcake.mp4');
-    this.voiceNothingSrc = assetUrl('Aw no cupcakes.mp4');
+    // Audio-only assets: the original MP4s have 62-second video tracks,
+    // so their ended event arrives long after the 3–5-second spoken line.
+    this.voiceBatchSrc = assetUrl('Yay 5 cupcakes.m4a');
+    this.voiceCupcakeSrc = assetUrl('Yay a cupcake.m4a');
+    this.voiceNothingSrc = assetUrl('Aw no cupcakes.m4a');
 
     const cow = document.createElement('img');
     cow.id = 'cake-cow';
@@ -321,6 +323,7 @@ export class CakeVisualization {
   }
 
   hide() {
+    this._finishVoiceLine?.();
     if (this.el) this.el.hidden = true;
     Object.values(this.cupcakeWidgets).forEach(({ el, labelEl, sharedLabelEl }) => {
       el.hidden = true;
@@ -341,18 +344,33 @@ export class CakeVisualization {
 
   // Plays a pre-recorded celebration line, stopping any line already playing.
   playVoiceLine(src) {
-    if (!src) return;
-    try {
-      if (this.currentVoiceAudio) {
-        this.currentVoiceAudio.pause();
-        this.currentVoiceAudio.currentTime = 0;
-      }
-      const audio = new Audio(src);
-      this.currentVoiceAudio = audio;
-      audio.play().catch((err) => console.warn('Unable to autoplay voice line:', err));
-    } catch (err) {
-      console.warn('Error starting voice line audio:', err);
+    this._finishVoiceLine?.();
+    if (this.currentVoiceAudio) {
+      this.currentVoiceAudio.pause();
+      this.currentVoiceAudio.currentTime = 0;
     }
+    this.voiceLineFinished = new Promise(resolve => {
+      let audio, timeout;
+      const finish = () => {
+        clearTimeout(timeout);
+        audio?.removeEventListener('ended', finish);
+        audio?.removeEventListener('error', finish);
+        if (this._finishVoiceLine === finish) this._finishVoiceLine = null;
+        resolve();
+      };
+      this._finishVoiceLine = finish;
+      try {
+        if (!src) { finish(); return; }
+        audio = new Audio(src);
+        this.currentVoiceAudio = audio;
+        audio.addEventListener('ended', finish, { once: true });
+        audio.addEventListener('error', finish, { once: true });
+        // Fail-safe for an unavailable/stalled clip, not the normal advance timer.
+        timeout = setTimeout(finish, 30000);
+        audio.play().catch(finish);
+      } catch (_) { finish(); }
+    });
+    return this.voiceLineFinished;
   }
 
   celebrateWithCow() {

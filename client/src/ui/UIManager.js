@@ -485,7 +485,7 @@ export class UIManager {
     `;
   }
 
-  showTrialFeedbackInContainer(success, canvasContainer, messageType = 'collaboration') {
+  showTrialFeedbackInContainer(success, canvasContainer, messageType = 'collaboration', feedbackFinished = null) {
     // Show trial feedback in a specific container (used by timeline)
     console.log(`📊 Showing trial feedback in container: ${success ? 'SUCCESS' : 'FAILURE'}`);
 
@@ -604,12 +604,11 @@ export class UIManager {
     canvasContainer.style.position = 'relative';
     canvasContainer.appendChild(overlay);
 
-    // Auto-remove after delay
-    setTimeout(() => {
-      if (overlay.parentNode) {
-        overlay.parentNode.removeChild(overlay);
-      }
-    }, 2000);
+    const removeOverlay = () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    };
+    if (feedbackFinished) Promise.resolve(feedbackFinished).then(removeOverlay, removeOverlay);
+    else setTimeout(removeOverlay, 2000);
   }
 
   setupGameCanvasInContainer(container) {
