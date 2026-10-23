@@ -498,12 +498,21 @@ export class ExperimentManager {
 
     const humanPlayerNumber = (this.aiPlayerNumber === 1) ? 2 : 1;
     // Ignore invalid human inputs before sampling the AI (no policy rerolls).
-    if (this.synchronizedDecisionPending || this.gameStateManager.isMoving) return;
+    if (this.synchronizedDecisionPending || this.gameStateManager.isMoving) {
+      this.gameStateManager.recordEvent('input_rejected', { actor: humanPlayerNumber, direction: humanDirection, reason: 'busy' });
+      return;
+    }
     if (CONFIG.game.requireBothLegalMoves &&
-        !this.gameStateManager.isLegalSynchronizedDirection(humanPlayerNumber, humanDirection)) return;
+        !this.gameStateManager.isLegalSynchronizedDirection(humanPlayerNumber, humanDirection)) {
+      this.gameStateManager.recordEvent('input_rejected', { actor: humanPlayerNumber, direction: humanDirection, reason: 'illegal_move' });
+      return;
+    }
     this.synchronizedDecisionPending = true;
+    this.gameStateManager.recordEvent('input_accepted', { actor: humanPlayerNumber, direction: humanDirection });
+    this.gameStateManager.recordEvent('ai_decision_requested');
     try {
       const { aiDirection, gptError } = await this.generateAIDirection(gameState);
+      this.gameStateManager.recordEvent('ai_decision_resolved', { direction: aiDirection, error: gptError ? String(gptError) : null });
 
       if (!aiDirection && !this.rlAgent) return;
 
@@ -1035,7 +1044,7 @@ export class ExperimentManager {
       const st = this.gameStateManager.getCurrentState();
       success = !!GameHelpers.didBothPlayersReachSameGoal(st);
     }
-    this.gameStateManager.finalizeTrial(success);
+    this.gameStateManager.finalizeTrial(success, result);
 
     // Show feedback with canonical success flag
     this.uiManager.showTrialFeedback({ success, experimentType });
@@ -1351,7 +1360,7 @@ export class ExperimentManager {
         if (GameConfigUtils.getStagHuntPhaseStartTrialIndices().includes(trialIndex)) {
           this.cakeVisualization.reset();
         }
-        this.cakeVisualization.show();
+        this.cakeVisualization.show({ rewards: !!this.gameStateManager.getCurrentState()?.player2 });
       }
 
       // Start trial execution
@@ -1369,6 +1378,7 @@ export class ExperimentManager {
   }
 
   startTimelineTrialExecution(experimentType) {
+    this.gameStateManager.recordEvent('trial_input_enabled');
     // Clear any existing intervals
     this.clearGameIntervals();
 
@@ -1456,7 +1466,7 @@ export class ExperimentManager {
     }
 
     // Finalize trial data
-    this.gameStateManager.finalizeTrial(success);
+    this.gameStateManager.finalizeTrial(success, result);
 
     // Get trial data for timeline
     const trialData = {
@@ -1482,7 +1492,7 @@ export class ExperimentManager {
     if (GameConfigUtils.isStagHuntExperiment(experimentType)) {
       if (GameConfigUtils.getStagHuntPhaseStartTrialIndices().includes(trialIndex) && this.lastCakeTrialIndex !== trialIndex) {
         this.cakeVisualization.reset();
-        this.cakeVisualization.show();
+        this.cakeVisualization.show({ rewards: !!this.gameStateManager.getCurrentState()?.player2 });
       }
 
       const td = this.gameStateManager.getCurrentTrialData();

@@ -1,3 +1,6 @@
+import { experimentWorkbook } from '../data/ExperimentWorkbook.js';
+import { googleDriveFetch } from '../data/GoogleDriveTransport.js';
+import { ResearchDataStore, jsonClone } from '../data/ResearchDataStore.js';
 import { NetworkManager } from '../network/NetworkManager.js';
 import { GameStateManager } from '../game/GameStateManager.js';
 import { UIManager } from '../ui/UIManager.js';
@@ -17,6 +20,8 @@ export class GameApplication {
     this.playerIndex = 0; // 0 = red player, 1 = purple player
     this.gameConfig = null; // Store game configuration from server
     this.useTimelineFlow = true; // Enable timeline flow by default
+    this.dataStore = null;
+    this.dyadId = null;
     this.currentRoomId = null; // Track active multiplayer room ID for export
 
     // Synchronized human-human turn state
@@ -40,13 +45,16 @@ export class GameApplication {
   }
 
   async start(options = {}) {
-    const { mode = 'human-ai', experimentType = '2P2G', roomId = null, useTimeline = true } = options;
+    let { mode = 'human-ai', experimentType = '2P2G', roomId = null, useTimeline = true } = options;
 
     // Check URL parameters for timeline preference
     const urlParams = new URLSearchParams(window.location.search);
     this.useTimelineFlow = urlParams.get('timeline') !== 'false' && useTimeline;
     const aiParam = urlParams.get('ai');
-    if (aiParam) {
+    if (CONFIG.server.staticAI) {
+      mode = 'human-ai';
+      GameConfigUtils.setPlayerType(2, 'rl_joint');
+    } else if (aiParam) {
       // Accept: 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_joint' | 'rl_individual' | 'we_intent_js' | legacy 'ai'
       GameConfigUtils.setPlayerType(2, aiParam);
     }
@@ -81,6 +89,7 @@ export class GameApplication {
 
     // Initialize core managers
     this.gameStateManager = new GameStateManager();
+    this.setupResearchStorage();
     this.uiManager = new UIManager(this.container);
 
     // Initialize timeline manager if using timeline flow
@@ -98,7 +107,7 @@ export class GameApplication {
 
     // Initialize network manager if needed
     const urlParams = new URLSearchParams(window.location.search);
-    const skipNetwork = urlParams.get('skipNetwork') === 'true';
+    const skipNetwork = CONFIG.server.staticAI || urlParams.get('skipNetwork') === 'true';
 
     if (!skipNetwork) {
       try {
@@ -121,6 +130,7 @@ export class GameApplication {
     this.setupUIEventHandlers();
 
     this.isInitialized = true;
+    this.persistResearchSnapshot('session_started');
 
     // Make GameApplication available globally for ExperimentManager communication
     try { window.__GAME_APPLICATION__ = this; } catch (_) { /* ignore */ }
@@ -134,7 +144,7 @@ export class GameApplication {
 
     // Check if we should skip network connection for testing
     const urlParams = new URLSearchParams(window.location.search);
-    const skipNetwork = urlParams.get('skipNetwork') === 'true';
+    const skipNetwork = CONFIG.server.staticAI || urlParams.get('skipNetwork') === 'true';
 
     // Default to configured fallback AI when not explicitly set
     if (!['gpt', 'gpt-ToM', 'vlm', 'vlm-ToM', 'human', 'rl_joint', 'rl_individual', 'rl_individual_python', 'we_intent_js'].includes(CONFIG.game.players.player2.type)) {
@@ -378,6 +388,67 @@ export class GameApplication {
     console.log('📡 Timeline event handlers setup completed');
   }
 
+  setupResearchStorage() {
+    this.dataStore = new ResearchDataStore({
+      endpoint: CONFIG.server.researchStorage === 'google-drive' ? CONFIG.server.googleAppsScriptUrl : `${CONFIG.server.url.replace(/\/$/, '')}/api/research/snapshots`,
+      fetchImpl: googleDriveFetch(),
+      onStatus: (status, detail) => {
+        if (status === 'server' && (detail?.sessionId !== this.dataStore.sessionId || detail.revision !== this.dataStore.revision)) return;
+        if (status === 'local-error') this.localBackupFailed = true;
+        if (status === 'local') this.localBackupFailed = false;
+        this.lastStorageStatus = { status, at: new Date().toISOString() };
+        const label = document.getElementById('research-save-status');
+        const messages = { local: 'Saved on this device', server: CONFIG.server.researchStorage === 'google-drive' ? 'Saved to Google Drive' : 'Saved to study computer',
+          pending: 'Upload pending — keep this page or download a backup',
+          'local-error': 'Device backup unavailable — download a backup' };
+        if (label) label.textContent = status === 'pending' && this.localBackupFailed
+          ? 'Data is not saved — keep this page open and download a backup' : (messages[status] || status);
+        if (status === 'server' && detail?.sessionId === this.dataStore.sessionId && detail.revision === this.dataStore.revision && this.timelineManager?.experimentData?.completed) {
+          this.timelineManager?.emit('data-save-success');
+        }
+      }
+    });
+    const panel = document.createElement('aside');
+    panel.id = 'research-save-panel';
+    panel.style.cssText = 'position:fixed;bottom:4px;left:8px;z-index:10000;font:12px sans-serif;background:#fff;padding:4px 8px;border:1px solid #ddd;border-radius:6px;max-width:90vw';
+    const label = document.createElement('span');
+    label.id = 'research-save-status'; label.setAttribute('role', 'status');
+    label.textContent = 'Preparing data backup';
+    const button = document.createElement('button');
+    button.textContent = 'Download backup'; button.style.marginLeft = '8px';
+    button.onclick = async () => {
+      await this.persistResearchSnapshot('manual_backup');
+      const data = await this.dataStore.exportLocal();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url;
+      link.download = `cake-data-backup-${Date.now()}.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    panel.append(label, button); document.body.append(panel);
+    this.gameStateManager.onDataChange = reason => this.persistResearchSnapshot(reason);
+    this.storageInterval = setInterval(() => {
+      if (!this.timelineManager?.experimentData?.completed) this.persistResearchSnapshot('periodic');
+      void this.dataStore.flush();
+    }, 15000);
+    this.storageOnlineHandler = () => this.dataStore.flush();
+    this.storagePageHandler = () => this.persistResearchSnapshot('pagehide');
+    this.storageVisibilityHandler = () => {
+      this.gameStateManager.recordEvent('visibility', { visibility: document.visibilityState });
+      this.persistResearchSnapshot('visibility');
+    };
+    window.addEventListener('online', this.storageOnlineHandler);
+    window.addEventListener('pagehide', this.storagePageHandler);
+    document.addEventListener('visibilitychange', this.storageVisibilityHandler);
+    void this.dataStore.flush(); // Recover pending records from earlier page loads.
+  }
+
+  persistResearchSnapshot(checkpoint = 'autosave') {
+    if (!this.dataStore) return Promise.resolve();
+    return this.saveExperimentData(this.timelineManager?.experimentData || {}, {
+      checkpoint, rawOnly: true, notifyTimeline: false, showAlert: false
+    });
+  }
+
   async saveExperimentData(data, options = {}) {
     // Save/export experiment data in legacy-compatible shape
     try {
@@ -426,7 +497,7 @@ export class GameApplication {
           'prolific_pid',
           'participantId',
           'participant_id'
-        ]) || lookitResponseId || `participant_${Date.now()}`;
+        ]) || lookitResponseId || `participant_${this.dataStore?.sessionId || Date.now()}`;
       }
 
       // Determine room id (from runtime or payload)
@@ -454,8 +525,10 @@ export class GameApplication {
         participantAgeMonths: data.participantAgeMonths ?? null,
         participantAgeDays: data.participantAgeDays ?? null,
         participantAgeTotalDays: data.participantAgeTotalDays ?? null,
+        participantIndex: data.participantIndex || null,
+        studySetting: data.studySetting || 'remote',
         parentEmail: data.parentEmail || null,
-        parentEmailUse: data.parentEmailUse || 'payment_and_child_certificate_only',
+        parentEmailUse: data.studySetting === 'museum' ? null : (data.parentEmailUse || 'payment_and_child_certificate_only'),
         successThreshold: gsData.successThreshold || {},
         completionCode: data.completionCode || '',
         version: (CONFIG?.game?.version) || '2.0.0',
@@ -466,9 +539,34 @@ export class GameApplication {
         waitingDetails: data.waitingDetails || []
       };
 
-      const dataStr = JSON.stringify(exportObj, null, 2);
+      Object.assign(exportObj, {
+        sessionId: this.dataStore?.sessionId || null,
+        dyadId: this.dyadId,
+        currentPlayer: this.playerIndex + 1,
+        dataSchemaVersion: '3.0.0',
+        build: typeof __BUILD_INFO__ !== 'undefined' ? __BUILD_INFO__ : { commit: 'unbundled', dirty: true },
+        flow: new URLSearchParams(window.location.search).get('lan') === 'true' ? 'lan-quick-play' : (this.useTimelineFlow ? 'study-timeline' : 'legacy'),
+        gameConfig: jsonClone(CONFIG.game),
+        assignedMapOrder: Object.fromEntries(Object.entries(this.experimentManager?.sampledMapsByExperiment || {}).map(([type, maps]) =>
+          [type, maps.map(map => ({ mapId: map.map_id, sourceMapId: map.source_map_id, rotation: map.rotation_degrees, phase: map.trial_phase }))])),
+        activeTrial: this.gameStateManager?.trialData?.trialId && !this.gameStateManager.trialData._finalized
+          ? { ...jsonClone(this.gameStateManager.trialData), state: jsonClone(this.gameStateManager.currentState) } : null,
+        sessionStatus: data.completed ? 'completed' : 'in_progress',
+        rtDefinition: 'Legacy playerNRT is cumulative execution elapsed ms, not individual decision RT',
+        agentActionOrder: ['left', 'right', 'up', 'down']
+      });
+      exportObj.allTrialsData = exportObj.allTrialsData.map(trial => ({
+        ...trial, sessionId: exportObj.sessionId, dyadId: exportObj.dyadId,
+        sharedTrialId: exportObj.dyadId ? `${exportObj.dyadId}:${trial.experimentType}:${trial.trialIndex}` : null,
+        cupcakeWidgetRedOnRight: exportObj.cupcakeWidgetRedOnRight
+      }));
+      if (this.dataStore) {
+        await this.dataStore.save(exportObj);
+        if (['trial_complete', 'pagehide', 'manual_backup', 'questionnaire_complete', 'lan_complete', 'session_started'].includes(saveCheckpoint)) void this.dataStore.flush();
+      }
+      if (options.rawOnly || CONFIG.server.researchStorage === 'google-drive') return exportObj;
 
-      // Do not save locally (no localStorage / no file download)
+      // Optional legacy mirror. Authoritative saving above does not depend on XLSX.
 
       // Try legacy-style Google Drive save via Apps Script using SheetJS if available
       const scriptUrl = CONFIG.server.googleAppsScriptUrl;
@@ -478,222 +576,14 @@ export class GameApplication {
       if (enableGDrive && scriptUrl && hasXlsx) {
         try {
           const XLSX = window.XLSX;
-          const wb = XLSX.utils.book_new();
-
-          // Process trial data into a flat table (include roomId as an extra column)
-          const trials = exportObj.allTrialsData || [];
-          if (trials.length > 0) {
-            // Normalize rows to a stable header set to prevent column mismatches
-            const processed = trials.map(t => {
-              const o = {};
-              for (const k in t) {
-                const v = t[k];
-                // Flatten arrays/objects for Excel cells
-                o[k] = (Array.isArray(v) || (v && typeof v === 'object')) ? JSON.stringify(v) : v;
-              }
-              // Add roomId column to each row (explicit)
-              o.roomId = exportObj.roomId || '';
-              // Add participantId per row for easier analysis join
-              o.participantId = exportObj.participantId;
-              o.saveCheckpoint = exportObj.saveCheckpoint || '';
-              o.saveCheckpointTime = exportObj.saveCheckpointTime || '';
-              // Lookit join keys from exp-lookit-iframe query parameters
-              o.lookitResponseId = exportObj.lookitResponseId || '';
-              o.lookitChildId = exportObj.lookitChildId || '';
-              o.participantDob = exportObj.participantDob || '';
-              o.participantAgeReferenceDate = exportObj.participantAgeReferenceDate || '';
-              o.participantAgeYears = exportObj.participantAgeYears ?? '';
-              o.participantAgeMonths = exportObj.participantAgeMonths ?? '';
-              o.participantAgeDays = exportObj.participantAgeDays ?? '';
-              o.participantAgeTotalDays = exportObj.participantAgeTotalDays ?? '';
-              o.parentEmail = exportObj.parentEmail || '';
-              o.parentEmailUse = exportObj.parentEmailUse || '';
-              // Add current player number (1 or 2) for human-human mode analysis
-              o.currentPlayer = (this.playerIndex !== undefined) ? (this.playerIndex + 1) : null;
-              // Legacy naming: prefer distanceCondition in exports
-              if (o.newGoalConditionType && !o.distanceCondition) {
-                o.distanceCondition = o.newGoalConditionType;
-              }
-              // Drop non-legacy alias from export to avoid confusion
-              delete o.newGoalConditionType;
-              return o;
-            });
-
-            // Build a stable union of all keys across rows
-            const headerSet = new Set();
-            processed.forEach(row => Object.keys(row).forEach(k => headerSet.add(k)));
-
-            // Prefer a sensible column order for readability; include common fields first if present
-            const preferredOrder = [
-              'trialIndex', 'experimentType', 'partnerAgentType',
-              'currentPlayer', 'participantId', 'lookitResponseId', 'lookitChildId', 'roomId',
-              'saveCheckpoint', 'saveCheckpointTime',
-              'parentEmail', 'parentEmailUse',
-              'participantDob', 'participantAgeReferenceDate',
-              'participantAgeYears', 'participantAgeMonths', 'participantAgeDays', 'participantAgeTotalDays',
-              'humanPlayerIndex', 'aiPlayerIndex',
-              'player1StartPosition', 'player2StartPosition', 'initialGoalPositions',
-              'partnerFallbackOccurred', 'partnerFallbackReason', 'partnerFallbackStage', 'partnerFallbackTime',
-              'partnerFallbackAIType',
-              'collaborationSucceeded',
-              'player1GoalReachedStep', 'player2GoalReachedStep',
-              'newGoalPresented', 'newGoalPosition', 'distanceCondition', 'isNewGoalCloserToPlayer2',
-              'trialStartTime', 'gptErrorEvents', 'currentPlayerIndex',
-              'player1Trajectory', 'player2Trajectory', 'player1Actions', 'player2Actions', 'player1RT', 'player2RT',
-              'player1CurrentGoal', 'player2CurrentGoal', 'player1FirstDetectedGoal', 'player2FirstDetectedGoal',
-              'player1FinalReachedGoal', 'player2FinalReachedGoal', 'firstDetectedSharedGoal'
-            ];
-            const headers = [];
-            // Add preferred keys that exist
-            preferredOrder.forEach(k => { if (headerSet.has(k)) { headers.push(k); headerSet.delete(k); } });
-            // Append any remaining keys in alphabetical order for determinism
-            headers.push(...Array.from(headerSet).sort());
-
-            // Map row values by header order to avoid misaligned columns
-            const wsData = [
-              headers,
-              ...processed.map(row => headers.map(h => (h in row) ? row[h] : ''))
-            ];
-
-            const ws = XLSX.utils.aoa_to_sheet(wsData);
-            XLSX.utils.book_append_sheet(wb, ws, 'ExperimentData');
-          } else {
-            const ws = XLSX.utils.aoa_to_sheet([["No experimental data available"], [new Date().toISOString()]]);
-            XLSX.utils.book_append_sheet(wb, ws, 'ExperimentData');
-          }
-
-          // Meta sheet
-          // Determine partner agent type summary for meta
-          const p2Type = (CONFIG?.game?.players?.player2?.type) || '';
-          const partnerAgentType = (function(){
-            const p1Type = (CONFIG?.game?.players?.player1?.type);
-            const p2Type = (CONFIG?.game?.players?.player2?.type);
-            const t = (p1Type !== 'human') ? p1Type : ((p2Type !== 'human') ? p2Type : 'human');
-            if (t === 'human') return 'human';
-            if (t === 'gpt') {
-              const model = (CONFIG?.game?.agent?.gpt?.model);
-              if (model && String(model).trim().length > 0) {
-                return String(model);
-              } else {
-                console.warn('⚠️ GPT model not cached in CONFIG for export, using configured default');
-                return 'gpt-4o'; // matches the configured GPT_MODEL in .env
-              }
-            }
-            if (t === 'rl_joint') return 'joint-rl';
-            if (t === 'rl_individual') return 'individual-rl';
-            if (t === 'ai') return (CONFIG?.game?.agent?.type === 'individual') ? 'individual-rl' : 'joint-rl'; // legacy safety
-            return t || 'unknown';
-          })();
-
-          const fallbackEvents = (gsData && Array.isArray(gsData.fallbackEvents)) ? gsData.fallbackEvents : [];
-
-          // Calculate collaboration success statistics
-          const allTrials = exportObj.allTrialsData || [];
-          const collaborationTrials = allTrials.filter(trial =>
-            trial.experimentType && GameConfigUtils.isTwoPlayerExperiment(trial.experimentType)
-          );
-          const collaborationSuccessCount = collaborationTrials.filter(trial =>
-            trial.collaborationSucceeded === true
-          ).length;
-          const collaborationSuccessRate = collaborationTrials.length > 0
-            ? Math.round((collaborationSuccessCount / collaborationTrials.length) * 100)
-            : 0;
-
-          const metaRows = [
-            ['participantId', exportObj.participantId],
-            ['lookitResponseId', exportObj.lookitResponseId || ''],
-            ['lookitChildId', exportObj.lookitChildId || ''],
-            ['saveCheckpoint', exportObj.saveCheckpoint || ''],
-            ['saveCheckpointTime', exportObj.saveCheckpointTime || ''],
-            ['dataSaveCheckpointTimes', JSON.stringify(exportObj.dataSaveCheckpointTimes || {})],
-            ['parentEmail', exportObj.parentEmail || ''],
-            ['parentEmailUse', exportObj.parentEmailUse || ''],
-            ['participantDob', exportObj.participantDob || ''],
-            ['participantAgeReferenceDate', exportObj.participantAgeReferenceDate || ''],
-            ['participantAgeYears', exportObj.participantAgeYears ?? ''],
-            ['participantAgeMonths', exportObj.participantAgeMonths ?? ''],
-            ['participantAgeDays', exportObj.participantAgeDays ?? ''],
-            ['participantAgeTotalDays', exportObj.participantAgeTotalDays ?? ''],
-            ['roomId', exportObj.roomId || ''],
-            ['experimentOrder', JSON.stringify(exportObj.experimentOrder || [])],
-            ['experimentType', exportObj.experimentType],
-            ['partnerAgentType', partnerAgentType],
-            ['fallbackEventCount', fallbackEvents.length],
-            ['fallbackEvents', JSON.stringify(fallbackEvents)],
-            ['waitingDuration', exportObj.waitingDuration || 0],
-            ['waitingDetails', JSON.stringify(exportObj.waitingDetails || [])],
-            ['gamesCompletedAt', exportObj.gamesCompletedAt || ''],
-            ['questionnaireCompletedAt', exportObj.questionnaireCompletedAt || ''],
-            ['collaborationTrialsTotal', collaborationTrials.length],
-            ['collaborationSuccessCount', collaborationSuccessCount],
-            ['collaborationSuccessRate', collaborationSuccessRate],
-            ['version', exportObj.version],
-            ['timestamp', exportObj.timestamp]
-          ];
-          const metaSheet = XLSX.utils.aoa_to_sheet(metaRows);
-          XLSX.utils.book_append_sheet(wb, metaSheet, 'Meta');
-
-          const participantInfoRows = [
-            ['Field', 'Value'],
-            ['participantId', exportObj.participantId],
-            ['lookitResponseId', exportObj.lookitResponseId || ''],
-            ['lookitChildId', exportObj.lookitChildId || ''],
-            ['saveCheckpoint', exportObj.saveCheckpoint || ''],
-            ['saveCheckpointTime', exportObj.saveCheckpointTime || ''],
-            ['parentEmail', exportObj.parentEmail || ''],
-            ['parentEmailUse', exportObj.parentEmailUse || ''],
-            ['participantDob', exportObj.participantDob || ''],
-            ['participantAgeReferenceDate', exportObj.participantAgeReferenceDate || ''],
-            ['participantAgeYears', exportObj.participantAgeYears ?? ''],
-            ['participantAgeMonths', exportObj.participantAgeMonths ?? ''],
-            ['participantAgeDays', exportObj.participantAgeDays ?? ''],
-            ['participantAgeTotalDays', exportObj.participantAgeTotalDays ?? ''],
-            ['gamesCompletedAt', exportObj.gamesCompletedAt || ''],
-            ['questionnaireCompletedAt', exportObj.questionnaireCompletedAt || '']
-          ];
-          const participantInfoSheet = XLSX.utils.aoa_to_sheet(participantInfoRows);
-          XLSX.utils.book_append_sheet(wb, participantInfoSheet, 'ParticipantInfo');
-
-          // Collaboration Summary sheet
-          const collaborationSummaryRows = [
-            ['Metric', 'Value'],
-            ['Total Collaboration Trials', collaborationTrials.length],
-            ['Collaboration Successes', collaborationSuccessCount],
-            ['Collaboration Failures', collaborationTrials.length - collaborationSuccessCount],
-            ['Collaboration Success Rate (%)', collaborationSuccessRate],
-            ['', ''], // Empty row for spacing
-            ['Experiment Type', 'Success Count', 'Total Trials', 'Success Rate (%)']
-          ];
-
-          // Add per-experiment-type breakdown
-          const experimentTypes = [...new Set(collaborationTrials.map(t => t.experimentType))];
-          experimentTypes.forEach(expType => {
-            const expTrials = collaborationTrials.filter(t => t.experimentType === expType);
-            const expSuccesses = expTrials.filter(t => t.collaborationSucceeded === true).length;
-            const expRate = expTrials.length > 0 ? Math.round((expSuccesses / expTrials.length) * 100) : 0;
-            collaborationSummaryRows.push([expType, expSuccesses, expTrials.length, expRate]);
-          });
-
-          const collaborationSheet = XLSX.utils.aoa_to_sheet(collaborationSummaryRows);
-          XLSX.utils.book_append_sheet(wb, collaborationSheet, 'CollaborationSummary');
-
-          // Questionnaire sheet
-          const q = exportObj.questionnaireData || exportObj.questionnaire || {};
-          let qSheet;
-          if (q && typeof q === 'object' && !Array.isArray(q)) {
-            const headers = Object.keys(q);
-            const values = headers.map(h => q[h]);
-            qSheet = XLSX.utils.aoa_to_sheet([headers, values]);
-          } else if (Array.isArray(q)) {
-            qSheet = XLSX.utils.aoa_to_sheet(q);
-          } else {
-            qSheet = XLSX.utils.aoa_to_sheet([["Questionnaire"], [JSON.stringify(q)]]);
-          }
-          XLSX.utils.book_append_sheet(wb, qSheet, 'Questionnaire');
+          const wb = experimentWorkbook(exportObj, XLSX);
 
           // Write workbook and send to Apps Script
           const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-          const base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(wbout)));
+          const bytes = new Uint8Array(wbout);
+          let binary = '';
+          for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+          const base64 = btoa(binary);
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
           const safeId = String(exportObj.participantId).replace(/[^a-zA-Z0-9_-]/g, '_');
           const safeRoom = String(exportObj.roomId || 'no-room').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -708,26 +598,16 @@ export class GameApplication {
           fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: formData })
             .then(() => {
               console.log(`✅ Google Drive save attempted via Apps Script (${saveCheckpoint})`);
-              // Provide user feedback like legacy and notify timeline
-              try {
-                if (notifyTimeline && this.timelineManager) {
-                  this.timelineManager.emit('data-save-success');
-                }
-                if (showAlert) {
-                  alert('Data saved successfully!');
-                }
-              } catch (e) {
-                // Ignore UI feedback errors
-              }
+              // Opaque no-cors response is not evidence of successful remote storage.
             })
             .catch(err => {
-              console.warn('⚠️ Google Drive save failed. Local saving is disabled.', err);
+              console.warn('⚠️ Google Drive save failed. Raw JSON remains available through the research data store.', err);
             });
         } catch (e) {
-          console.warn('⚠️ Excel/Apps Script save failed. Local saving is disabled.', e);
+          console.warn('⚠️ Excel/Apps Script save failed. Raw JSON remains available through the research data store.', e);
         }
       } else {
-        console.warn('⚠️ Google Drive save disabled or XLSX not available. Local saving is disabled.');
+        console.warn('⚠️ Google Drive save disabled or XLSX not available. Raw JSON remains available through the research data store.');
       }
     } catch (error) {
       console.error('Failed to save/export experiment data:', error);
@@ -782,6 +662,7 @@ export class GameApplication {
       console.log('Room joined:', data);
       if (data && data.roomId) {
         this.currentRoomId = data.roomId;
+        this.dyadId = data.dyadId || null;
         // Expose room id and a deterministic session seed for client-side sync logic
         try {
           window.__ROOM_ID__ = data.roomId;
@@ -1072,6 +953,7 @@ export class GameApplication {
     });
 
     // Game actions
+    this.uiManager.on('research-input', detail => this.gameStateManager.recordEvent('human_input', { actor: this.playerIndex + 1, clock: 'local_device', ...detail }));
     this.uiManager.on('player-move', async (direction) => {
       // Always allow free movement in single-player experiments (1P1G, 1P2G)
       try {
@@ -1612,6 +1494,11 @@ export class GameApplication {
 
   // Cleanup
   destroy() {
+    clearInterval(this.storageInterval);
+    window.removeEventListener('online', this.storageOnlineHandler);
+    window.removeEventListener('pagehide', this.storagePageHandler);
+    document.removeEventListener('visibilitychange', this.storageVisibilityHandler);
+    document.getElementById('research-save-panel')?.remove();
     // Stop real-time synchronization
     this.stopRealTimeSync();
 

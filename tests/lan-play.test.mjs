@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+globalThis.window = { io: null, location: { origin: 'http://localhost', search: '' } };
+const { LanGameApplication } = await import('../client/src/core/LanGameApplication.js');
+const { GameStateManager } = await import('../client/src/game/GameStateManager.js');
+const { GameRoomManager } = await import('../server/gameRoomManager.js');
+const { CONFIG } = await import('../client/src/config/gameConfig.js');
+CONFIG.game.requireBothLegalMoves = true;
+CONFIG.game.players.player1.type = CONFIG.game.players.player2.type = 'human';
+const rooms = new GameRoomManager();
+assert.equal(rooms.joinRoom('a', 'lan-test', 'human-human', 'StagHunt'), rooms.joinRoom('b', 'lan-test', 'human-human', 'StagHunt'));
+assert.throws(() => rooms.joinRoom('c', 'lan-test', 'human-human', 'StagHunt'), /full/);
+rooms.leaveRoom('a'); rooms.leaveRoom('b');
+assert.equal(rooms.getRoom('lan-test'), undefined);
+assert.throws(() => rooms.joinRoom('d', 'missing', 'human-human', 'StagHunt'), /not found/);
+const design = { initPlayerGrid:[0,0], initAIGrid:[0,4], bigGoals:[[0,2]], smallGoals:[[4,0],[4,4]], gridSize:5, obstacles:[], utility_summary:{hare_reward_each:1,stag_reward_each:5,step_cost_per_move:0} };
+const make = index => {
+  const app = Object.create(LanGameApplication.prototype);
+  Object.assign(app,{playerIndex:index,lanActive:true,lanReady:new Set([0]),lanLocalTrial:0,lanPending:[null,null],lanStatus(){},uiManager:{updateGameDisplay(){}},experimentManager:{handleTrialComplete(){app.completed=true;}}});
+  app.gameStateManager = new GameStateManager();
+  app.gameStateManager.initializeTrial(0,'StagHunt',design);
+  return app;
+};
+const host=make(0), guest=make(1);
+host.lanSend = action => guest.handleRemotePlayerAction({action});
+guest.lanSend = action => host.handleRemotePlayerAction({action});
+await host.handleHumanHumanSynchronizedMove('up');
+assert.equal(host.gameStateManager.stepCount,0,'blocked input must not advance');
+await host.handleHumanHumanSynchronizedMove('right');
+assert.equal(host.gameStateManager.stepCount,0,'wait for partner');
+await guest.handleHumanHumanSynchronizedMove('left');
+assert.equal(host.gameStateManager.stepCount,1);
+assert.deepEqual(host.gameStateManager.currentState.player1,guest.gameStateManager.currentState.player1);
+assert.deepEqual(host.gameStateManager.currentState.player2,guest.gameStateManager.currentState.player2);
+// Replayed or delayed input from an earlier turn cannot change the current turn.
+host.handleRemotePlayerAction({action:{type:'lan-move',trial:0,step:0,direction:'left'}});
+assert.equal(host.lanPending[1],null);
+await host.handleHumanHumanSynchronizedMove('right');
+await guest.handleHumanHumanSynchronizedMove('down');
+assert.deepEqual(host.gameStateManager.currentState.player1,[0,2]);
+// The host is locked on a goal; the guest can now finish without more host keys.
+await guest.handleHumanHumanSynchronizedMove('left');
+await guest.handleHumanHumanSynchronizedMove('up');
+assert.equal(host.completed,true);
+assert.equal(guest.completed,true);
+assert.deepEqual(host.gameStateManager.currentState.player2,[0,2]);
+assert.deepEqual(host.gameStateManager.currentState.player2,guest.gameStateManager.currentState.player2);
+console.log('PASS: named rooms, capacity, cleanup, legal input, paired turns, identical boards, stale input rejection, goal-locked stays, and completion on both clients.');

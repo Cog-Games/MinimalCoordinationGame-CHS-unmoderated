@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>Stag Hunt storage verification</title>
+<style>body{font:18px system-ui;max-width:950px;margin:40px auto;padding:20px}button{font:inherit;padding:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f5f7;padding:20px}li{margin:12px}</style>
+<h1>Stag Hunt storage verification</h1>
+<p>Test data only. Uses the game's real IndexedDB store and Google Drive transport.</p>
+<button id="run">Run storage checks</button> <button id="reload">Reload and check local backup</button>
+<ul id="checks"></ul><pre id="result">Loading local backup…</pre>
+<script src="/vendor/xlsx.full.min.js"></script>
+<script type="module">
+import { ResearchDataStore, IndexedSnapshotStore } from './src/data/ResearchDataStore.js';
+import { googleDriveFetch } from './src/data/GoogleDriveTransport.js';
+import { CONFIG } from './src/config/gameConfig.js';
+const result=document.querySelector('#result'), checks=document.querySelector('#checks');
+const check=(ok,label)=>{const li=document.createElement('li');li.textContent=(ok?'PASS: ':'FAIL: ')+label;checks.append(li);if(!ok)throw Error(label);};
+const show=async()=>{
+ const store=new ResearchDataStore({endpoint:CONFIG.server.googleAppsScriptUrl});
+ const backups=await store.exportLocal();
+ result.textContent=JSON.stringify({localBackupCount:backups.length,backups},null,2);
+ return backups;
+};
+await show();
+document.querySelector('#reload').onclick=()=>location.reload();
+document.querySelector('#run').onclick=async()=>{
+ document.querySelector('#run').disabled=true;
+ try {
+  let offline=false;
+  const transport=googleDriveFetch({fetchImpl:(...args)=>{if(offline)throw Error('Simulated offline');return fetch(...args);}});
+  const store=new ResearchDataStore({endpoint:CONFIG.server.googleAppsScriptUrl,fetchImpl:transport});
+  const snapshot={participantId:'TEST-browser-storage',validationOnly:true,sessionStatus:'in_progress',timestamp:new Date().toISOString(),saveCheckpoint:'session_started',allTrialsData:[]};
+  await store.save(snapshot);await store.flush();
+  let backup=(await store.exportLocal()).find(s=>s.sessionId===store.sessionId);
+  check(!backup.pending&&!!backup.remoteFileId,'first browser upload confirmed by Drive');
+  const fileId=backup.remoteFileId;
+  offline=true;
+  await store.save({...snapshot,saveCheckpoint:'comprehension_answer',comprehensionCheckData:{questions:[{name:'test',attempts:1,finalAnswer:'5 cupcakes'}]}});await store.flush();
+  let persisted=(await new IndexedSnapshotStore().all()).find(r=>r.sessionId===store.sessionId);
+  check(persisted.pending&&persisted.revision===2&&persisted.snapshot.comprehensionCheckData.questions.length===1,'offline checkpoint persisted in IndexedDB');
+  offline=false;await store.flush();
+  backup=(await store.exportLocal()).find(s=>s.sessionId===store.sessionId);
+  check(!backup.pending&&backup.remoteFileId===fileId,'retry updates the same Drive file');
+  const final={...snapshot,sessionStatus:'completed',saveCheckpoint:'questionnaire_complete',questionnaireData:{ai_detection:'Computer',collaboration_rating:'Good collaborator',play_again:'Yes'},comprehensionCheckData:persisted.snapshot.comprehensionCheckData};
+  await store.save(final);await store.flush();
+  backup=(await store.exportLocal()).find(s=>s.sessionId===store.sessionId);
+  check(!backup.pending&&backup.remoteFileId===fileId&&backup.revision===3,'final save retains file ID');
+  const fresh=await show();const recovered=fresh.find(s=>s.sessionId===store.sessionId);
+  check(recovered.sessionStatus==='completed'&&recovered.questionnaireData.play_again==='Yes'&&!JSON.stringify(fresh).includes('writeToken'),'fresh local store exports complete backup without write tokens');
+ }catch(e){result.textContent='ERROR: '+e.message;}
+};
+</script>

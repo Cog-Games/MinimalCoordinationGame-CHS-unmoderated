@@ -1,4 +1,5 @@
 import express from 'express';
+import { researchDataHandler } from './researchDataStore.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
@@ -51,7 +52,11 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '8mb' }));
+// Kept outside client/dist and never served by an HTTP read route.
+app.post('/api/research/snapshots', researchDataHandler(
+  process.env.RESEARCH_DATA_DIR || path.join(__dirname, '..', 'research-data')
+));
 
 // Initialize game managers
 const roomManager = new GameRoomManager();

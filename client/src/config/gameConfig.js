@@ -29,6 +29,8 @@ export const CONFIG = {
 
   // Server configuration
   server: {
+    staticAI: getEnvVar('VITE_STATIC_AI', 'false') === 'true',
+    researchStorage: getEnvVar('VITE_RESEARCH_STORAGE', 'server'),
     // Point to same-origin server by default (single-service deploy)
     url: getEnvVar('VITE_SERVER_URL', defaultServerUrl),
     reconnectAttempts: 3,
@@ -153,7 +155,7 @@ export const CONFIG = {
     agent: {
       // RL mode for player2 when using RL: 'individual' or 'joint'
       type: 'joint',
-      stagHuntDP: { enabled: true, cost: 0.9, gamma: 0.9, tau: 0.2, horizon: 60, stagReward: 5, hareReward: 1 },
+      stagHuntDP: { enabled: true, cost: 0.30, gamma: 0.9, tau: 0.10, horizon: 60, policyVersion: 'shared-cakes-step-beta3-v1', normalization: 'unit-step-cost', normalizedBeta: 3, jointStagReward: 5, hareReward: 1 },
       delay: 500,
       independentDelay: 300,
       // When true, AI/GPT/SA moves are synchronized with human input.

@@ -7,7 +7,7 @@ import {ExperimentManager} from '../client/src/experiments/ExperimentManager.js'
 const loader=Object.create(MapLoader.prototype);
 const log=console.log;console.log=()=>{};
 function make(){const g=new GameStateManager();g.initializeTrial(0,'StagHunt',loader.normalizeStagHuntMap(StagHuntMaps['1'][0]));return g;}
-const snapshot=g=>JSON.stringify({state:g.currentState,data:g.trialData,steps:g.stepCount,moving:g.isMoving});
+const snapshot=g=>JSON.stringify({state:g.currentState,data:{...g.trialData,events:[]},steps:g.stepCount,moving:g.isMoving});
 try{
  assert.equal(CONFIG.game.requireBothLegalMoves,true);
  for(const [human,ai]of [['right','right'],['up','up'],['up',null],[null,'right'],['unknown','right'],['up','unknown']]){

@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {DP_DEFAULTS} from '../client/src/ai/DiscountedJointDP.js';
+import { snapshotWorkbook, googleDriveFetch } from '../client/src/data/GoogleDriveTransport.js';
+const c={};vm.createContext(c);vm.runInContext(fs.readFileSync('client/public/vendor/xlsx.full.min.js','utf8'),c);
+const snapshot={ sessionId:'a'.repeat(32), dataSchemaVersion:'3.0.0', allTrialsData:[{trialIndex:0,trialId:'solo',status:'ended', experimentType:'StagHunt',trialPhase:'main',player2StartPosition:[0,0],player1Actions:[[1,0]],events:[{type:'trial_end',turnId:1}],dpDecisions:[{step:0,action:3,parameters:{...DP_DEFAULTS}}]}], note:'儿童🧁'.repeat(20000), cupcakeWidgetRedOnRight:false, currentPlayer:1, questionnaire:{ai_detection:'Computer', collaboration_rating:'Good collaborator',play_again:'Yes'}, comprehensionCheckData:{questions:[{name:'big_quantity',attempts:2,firstAttemptCorrect:false,finalAnswer:'5',displayOrder:['1','5'],history:[{answer:'1',correct:false},{answer:'5',correct:true}]}]} };
+const record={sessionId:snapshot.sessionId,revision:7,writeToken:'b'.repeat(32),snapshot:{...snapshot,sessionStatus:'in_progress'}};
+const wb=c.XLSX.read(snapshotWorkbook(record,c.XLSX),{type:'base64'});
+const rows=c.XLSX.utils.sheet_to_json(wb.Sheets.RawJSON,{header:1}).slice(1);
+assert(rows.length>1);assert(rows.every(r=>r[1].length<=24000));
+assert.deepEqual(JSON.parse(Buffer.from(rows.map(r=>r[1]).join(''),'base64').toString('utf8')),record.snapshot);
+let sent;
+const make = result => googleDriveFetch({ XLSX:()=>c.XLSX,fetchImpl:async (_url,opts)=>{if(opts.method==='GET') return {ok:true,json:async()=>({protocol:'cake-session-upsert-v1'})}; sent=opts;return {ok:true,json:async()=>typeof result==='function'?result(opts):result};} });
+const endpoint='https://script.google.com/macros/s/test/exec';
+const response=await make(o=>({status:'success',protocol:'cake-session-upsert-v1',sessionId:record.sessionId,revision:7,storedRevision:7,fileId:'test-file',fileName:o.body.get('filename')}))(endpoint,{body:JSON.stringify(record)});
+assert.equal((await response.json()).revision,7);assert.equal(sent.mode,'cors');assert.equal(sent.body.get('filetype'),'excel');assert.equal(sent.body.get('writeToken'),record.writeToken);assert.equal(sent.body.get('filename'),`cake_${record.sessionId}.xlsx`);
+for(const result of [{status:'ignored'},{status:'success',fileId:'wrong',fileName:'other.xlsx'}]) await assert.rejects(()=>make(result)(endpoint,{body:JSON.stringify(record)}));
+console.log('PASS: complete Unicode snapshot round-trip, bounded cells, matching Drive acknowledgement, ignored/wrong-file rejection.');
+
+for(const name of ['ExperimentData','Events','AgentDecisions','Meta','ParticipantInfo','CollaborationSummary','Questionnaire','Comprehension','SessionMetadata']) assert(wb.Sheets[name],name);
+const table = name => c.XLSX.utils.sheet_to_json(wb.Sheets[name]);
+assert.equal(table('ExperimentData')[0].currentPlayer,1);
+assert.equal(table('ExperimentData')[0].player1Actions,'[[1,0]]');
+assert.equal(table('Events')[0].type,'trial_end');
+assert.equal(table('AgentDecisions').length,1);
+assert.deepEqual(JSON.parse(table('AgentDecisions')[0].payload).parameters,DP_DEFAULTS);
+assert.deepEqual(JSON.parse(Buffer.from(rows.map(r=>r[1]).join(''),'base64').toString('utf8')).allTrialsData[0].dpDecisions[0].parameters,DP_DEFAULTS);
+assert.equal(table('Questionnaire')[0].play_again,'Yes');
+assert.equal(table('Comprehension')[0].Attempts,2);
+assert.equal(table('Comprehension')[0].DisplayOrder,'["1","5"]');
+const extra = table('Overflow').filter(r=>r.sheet==='SessionMetadata');
+assert.equal(extra.map(r=>r.text).join(''),snapshot.note);
+console.log('PASS: legacy worksheets, actions, event and decision rows, questionnaire, comprehension retry/order, lossless oversized fields.');
+
+let oldPosts=0;
+const oldService=googleDriveFetch({XLSX:()=>c.XLSX,fetchImpl:async(_u,o)=>{if(o.method==='POST') oldPosts++; return {ok:true,json:async()=>({status:'success'})};}});
+await assert.rejects(()=>oldService(endpoint,{body:JSON.stringify(record)}),/deployment/);
+assert.equal(oldPosts,0,'legacy service must not receive a duplicate-producing POST');
+assert.equal(snapshotWorkbook(record,c.XLSX),snapshotWorkbook(record,c.XLSX),'same revision produces identical bytes');
+console.log('PASS: stable filename, revision acknowledgement, capability check prevents legacy duplicate creation.');
+for (const fields of [{participantIndex:'M001',studySetting:'museum',parentEmail:null},{parentEmail:'parent+study@example.com',studySetting:'remote'}]) {
+  const named={...record,snapshot:{...record.snapshot,...fields}};
+  await make(o=>({status:'success',protocol:'cake-session-upsert-v1',sessionId:record.sessionId,revision:7,storedRevision:7,fileId:'same-file',fileName:o.body.get('filename')}))(endpoint,{body:JSON.stringify(named)});
+  assert.equal(sent.body.get('filename'),`cake_${fields.participantIndex || fields.parentEmail}_${record.sessionId}.xlsx`);
+  const book=c.XLSX.read(snapshotWorkbook(named,c.XLSX),{type:'base64'});
+  const row=c.XLSX.utils.sheet_to_json(book.Sheets.ExperimentData)[0];
+  assert.equal(row.studySetting,fields.studySetting);
+  assert.equal(row.participantIndex,fields.participantIndex || '');
+}
+console.log('PASS: museum index and parent email are sent in filenames and recorded in the analysis table.');

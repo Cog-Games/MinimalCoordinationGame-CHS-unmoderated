@@ -1,8 +1,10 @@
 import { GameApplication } from './src/core/GameApplication.js';
+import { LanGameApplication } from './src/core/LanGameApplication.js';
 import { CONFIG } from './src/config/gameConfig.js';
 
 // Initialize the application
-const app = new GameApplication(document.getElementById('app'));
+const Application = !CONFIG.server.staticAI && new URLSearchParams(window.location.search).get('lan') === 'true' ? LanGameApplication : GameApplication;
+const app = new Application(document.getElementById('app'));
 
 // Handle different startup modes
 const urlParams = new URLSearchParams(window.location.search);

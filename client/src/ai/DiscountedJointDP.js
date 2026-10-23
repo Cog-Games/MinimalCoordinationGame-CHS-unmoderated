@@ -1,7 +1,9 @@
 // Finite-horizon max-Bellman DP, followed by joint-action softmax and
 // marginalization over the partner's action. Only the AI action is sampled.
 export const DP_ACTIONS = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-export const DP_DEFAULTS = Object.freeze({ cost: 0.9, gamma: 0.9, tau: 0.2, horizon: 60, stagReward: 5, hareReward: 1 });
+// Shared-output planning utility: SS=5, distinct HH=2, SH/HS=1.
+// Cost is internal planning utility, never deducted from displayed cakes.
+export const DP_DEFAULTS = Object.freeze({ cost: 0.30, gamma: 0.9, tau: 0.10, horizon: 60, policyVersion: 'shared-cakes-step-beta3-v1', normalization: 'unit-step-cost', normalizedBeta: 3, jointStagReward: 5, hareReward: 1 });
 const key = p => p.join(',');
 export class DiscountedJointDP {
   constructor(parameters = {}) {
@@ -9,10 +11,10 @@ export class DiscountedJointDP {
     this.cache = new Map();
   }
   planner(grid, goals, goalTypes) {
-    const { cost, gamma, horizon, stagReward, hareReward } = this.parameters;
+    const { cost, gamma, horizon, jointStagReward, hareReward } = this.parameters;
     const size = grid.length;
     const walls = grid.flatMap((row, r) => row.flatMap((v, c) => v === 4 ? [[r, c]] : []));
-    const cacheKey = JSON.stringify([size, walls, goals, goalTypes]);
+    const cacheKey = JSON.stringify([size, walls, goals, goalTypes, cost, gamma, horizon, jointStagReward, hareReward]);
     if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
     if (goalTypes?.length !== goals.length) throw Error('DP requires explicit goal types');
     const wallSet = new Set(walls.map(key));
@@ -33,7 +35,7 @@ export class DiscountedJointDP {
       terminal[s]=Number(g>=0&&f>=0);
       // Payoff also covers timeout: an already caught hare retains its reward.
       const gh=g>=0&&goalTypes[g]==='small', fh=f>=0&&goalTypes[f]==='small';
-      payoff[s]=g>=0&&g===f&&goalTypes[g]==='big'?2*stagReward:(gh?hareReward:0)+(fh&&f!==g?hareReward:0);
+      payoff[s]=g>=0&&g===f&&goalTypes[g]==='big'?jointStagReward:(gh?hareReward:0)+(fh&&f!==g?hareReward:0);
       for (const a of moves[p]) for (const b of moves[q]) pairs[s].push({a,b,next:next[p*4+a]*N+next[q*4+b],moves:Number(next[p*4+a]!==p)+Number(next[q*4+b]!==q)});
     }
     const V = new Float64Array((horizon+1)*S); V.set(payoff);

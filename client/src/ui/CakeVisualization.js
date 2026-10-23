@@ -305,13 +305,13 @@ export class CakeVisualization {
     return MIN_CUPCAKE_SIZE;
   }
 
-  show() {
+  show({ rewards = true } = {}) {
     this.ensureMounted();
-    this.el.hidden = false;
+    this.el.hidden = !rewards;
     Object.values(this.cupcakeWidgets).forEach(({ el, labelEl, sharedLabelEl }) => {
-      el.hidden = false;
-      labelEl.hidden = false;
-      sharedLabelEl.hidden = false;
+      el.hidden = !rewards;
+      labelEl.hidden = !rewards;
+      sharedLabelEl.hidden = !rewards;
     });
     this.cowEl.hidden = false;
     if (!this.cowHideTimeout) this.cowEl.src = this.cowIdleSrc;

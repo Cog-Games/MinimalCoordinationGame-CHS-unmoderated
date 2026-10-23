@@ -1,10 +1,10 @@
-# Publishes `dist/` to the `gh-pages` branch after every push to `master`.
+# Publishes `dist/` to the `gh-pages` branch after every push to `codex/museum-default-entry`.
 # Repo Settings → Pages → Build and deployment → Source: Branch → gh-pages → / (root)
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [master, main]
+    branches: [codex/museum-default-entry]
   workflow_dispatch:
 
 permissions:
@@ -28,7 +28,7 @@ jobs:
       - name: Install and build
         run: |
           npm ci
-          npm run build
+          npm run build:pages
 
       - name: Deploy to gh-pages branch
         uses: JamesIves/github-pages-deploy-action@v4

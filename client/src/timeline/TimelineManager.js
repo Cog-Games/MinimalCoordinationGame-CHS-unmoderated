@@ -28,8 +28,10 @@ export class TimelineManager {
       participantAgeMonths: null,
       participantAgeDays: null,
       participantAgeTotalDays: null,
+      participantIndex: null,
+      studySetting: this.getStudySetting(),
       parentEmail: null,
-      parentEmailUse: 'payment_and_child_certificate_only',
+      parentEmailUse: this.getStudySetting() === 'remote' ? 'payment_and_child_certificate_only' : null,
       dataSaveCheckpointTimes: {},
       totalScore: 0,
       completed: false
@@ -527,13 +529,18 @@ export class TimelineManager {
     });
   }
 
+  getStudySetting() {
+    return new URLSearchParams(window.location.search).get('setting') === 'remote' ? 'remote' : 'museum';
+  }
+
   showStartStage() {
+    const museumMode = this.getStudySetting() === 'museum';
     this.container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f8f9fa;">
         <div style="background: white; padding: 36px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 560px; width: calc(100% - 40px); text-align: center;">
           <h2 style="color: #333; margin: 0 0 12px; font-size: 28px;">Welcome to the Game!</h2>
           <p style="font-size: 16px; color: #444; line-height: 1.5; margin: 0 0 24px;">
-            Please enter your kid's date of birth and a parent email to start the game.
+            ${museumMode ? "Please enter the child’s date of birth and participant index to start the game." : "Please enter your kid's date of birth and a parent email to start the game."}
           </p>
 
           <form id="dobStartForm" style="display: flex; flex-direction: column; gap: 18px; align-items: stretch;">
@@ -562,12 +569,12 @@ export class TimelineManager {
             </div>
 
             <label style="font-weight: bold; color: #333; text-align: left;">
-              Parent email
-              <input id="parentEmail" type="email" required autocomplete="email" placeholder="parent@example.com" style="box-sizing: border-box; width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #bbb; border-radius: 6px; font-size: 16px;">
+              ${museumMode ? 'Participant index' : 'Parent email'}
+              <input id="${museumMode ? 'participantIndex' : 'parentEmail'}" type="${museumMode ? 'text' : 'email'}" required autocomplete="${museumMode ? 'off' : 'email'}" maxlength="${museumMode ? 40 : 254}" placeholder="${museumMode ? 'M001' : 'parent@example.com'}" style="box-sizing: border-box; width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #bbb; border-radius: 6px; font-size: 16px;">
             </label>
 
             <p style="font-size: 14px; color: #555; line-height: 1.45; margin: -6px 0 0; text-align: left;">
-              Your email will be used only to send your child’s certificate and study payment.
+              ${museumMode ? 'Enter the index assigned by the researcher, for example M001. No email is needed.' : 'Your email will be used only to send your child’s certificate and study payment.'}
             </p>
 
             <div id="dobError" role="alert" style="min-height: 22px; color: #dc3545; font-size: 15px; text-align: center;"></div>
@@ -601,6 +608,7 @@ export class TimelineManager {
       const month = Number(document.getElementById('dobMonth')?.value);
       const day = Number(document.getElementById('dobDay')?.value);
       const parentEmail = String(document.getElementById('parentEmail')?.value || '').trim();
+      const participantIndex = String(document.getElementById('participantIndex')?.value || '').trim().toUpperCase();
       const dob = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const ageInfo = this.calculateAgeFromDob(dob, new Date());
 
@@ -609,15 +617,21 @@ export class TimelineManager {
         return;
       }
 
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail)) {
+      if (museumMode && !/^[A-Z0-9][A-Z0-9_-]{0,39}$/.test(participantIndex)) {
+        setError('Please enter an index using letters, numbers, hyphens or underscores, for example M001.');
+        return;
+      }
+      if (!museumMode && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail)) {
         setError('Please enter a valid parent email address.');
         return;
       }
 
       Object.assign(this.experimentData, {
         ...ageInfo,
-        parentEmail,
-        parentEmailUse: 'payment_and_child_certificate_only'
+        participantIndex: museumMode ? participantIndex : null,
+        studySetting: museumMode ? 'museum' : 'remote',
+        parentEmail: museumMode ? null : parentEmail,
+        parentEmailUse: museumMode ? null : 'payment_and_child_certificate_only'
       });
       if (startBtn) {
         startBtn.disabled = true;
@@ -1086,6 +1100,8 @@ export class TimelineManager {
     ];
 
     const results = [];
+    let questionShownAt = Date.now();
+    this.experimentData.comprehensionCheck = { experimentType, questions: results };
     let qIndex = 0;
     // Randomize (50/50) which side each answer appears on, once per question so
     // the order stays put if the participant retries after a wrong answer.
@@ -1119,10 +1135,13 @@ export class TimelineManager {
         displayOrder: displayOrders[qIndex].map((i) => q.options[i])
       };
       attemptRecord.attempts += 1;
+      (attemptRecord.history ||= []).push({ answer: q.options[idx], answerIndex: idx, correct, at: Date.now(), elapsedSinceQuestionShownMs: Date.now() - questionShownAt });
       if (attemptRecord.firstAttemptCorrect === null) {
         attemptRecord.firstAttemptCorrect = correct;
       }
+      if (correct) attemptRecord.finalAnswer = q.options[idx];
       results[qIndex] = attemptRecord;
+      window.__GAME_APPLICATION__?.persistResearchSnapshot?.('comprehension_answer');
 
       if (!correct) {
         renderQuestion(true);
@@ -1133,6 +1152,7 @@ export class TimelineManager {
 
       if (qIndex < questions.length - 1) {
         qIndex += 1;
+        questionShownAt = Date.now();
         renderQuestion(false);
       } else {
         finish();
@@ -1690,7 +1710,7 @@ export class TimelineManager {
     }
 
     // Stag Hunt shows the cupcake/cake widget row beneath the grid, so reserve room for it
-    const showCakeRow = GameConfigUtils.isStagHuntExperiment(experimentType);
+    const showCakeRow = GameConfigUtils.isStagHuntExperiment(experimentType) && !(experimentType === 'StagHunt' && trialIndex === 0 && CONFIG.game.experiments.stagHuntPhaseRounds?.[0] === 1);
     const cakeRowMargin = 12;
     const reservedHeight = 125 + (showCakeRow ? WIDGET_ROW_HEIGHT + cakeRowMargin : 0);
     const cakeRowSlot = showCakeRow
@@ -2045,6 +2065,8 @@ export class TimelineManager {
           btn.addEventListener('click', () => {
             const idx = Number(btn.getAttribute('data-idx') || '0');
             answers[q.name] = q.options[idx];
+            this.experimentData.questionnaire = { ...answers };
+            this.requestDataSaveCheckpoint('questionnaire_answer');
 
             if (synth) synth.cancel();
             if (currentAudio) {
