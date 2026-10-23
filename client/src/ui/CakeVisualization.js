@@ -13,8 +13,14 @@ const SHARED_WIDTH_RATIO = 1.5;
 // Chef Cowlie stands to the left of the map
 const COW_WIDTH = 230;
 const COW_CELEBRATE_DURATION = 2400;
-// Chef-hat labels sit above the cupcake makers
+// Chef-hat labels sit above the cupcake makers (both hats above the shared one)
 const LABEL_HEIGHT = 56;
+const SHARED_LABEL_GAP = 16;
+// Shared widget's border: alternating red/purple dashes (drawn as SVG, since a
+// CSS dashed border can only be one color)
+const BORDER_WIDTH = 3;
+const BORDER_RADIUS = 20;
+const BORDER_DASH = 22;
 export const WIDGET_ROW_HEIGHT = LABEL_HEIGHT + WIDGET_HEIGHT;
 // Placeholder element in the trial screen that reserves space for the widget row
 export const WIDGET_ROW_SLOT_ID = 'cake-widget-row-slot';
@@ -83,8 +89,8 @@ const STYLE = `
   text-align: center;
   font-family: system-ui, sans-serif;
   background: rgba(255, 255, 255, 0.9);
-  border: 3px solid #fff;
-  border-radius: 20px;
+  border: ${BORDER_WIDTH}px solid #fff;
+  border-radius: ${BORDER_RADIUS}px;
   box-shadow: 0 10px 28px rgba(100, 45, 20, 0.2);
   pointer-events: none;
   user-select: none;
@@ -93,6 +99,14 @@ const STYLE = `
 .cupcake-widget[hidden] { display: none; }
 .cupcake-widget.red { border-color: ${CONFIG.visual.colors.player1}; }
 .cupcake-widget.purple { border-color: ${CONFIG.visual.colors.player2}; }
+.cupcake-widget.shared { border-color: transparent; }
+.cupcake-widget .shared-border {
+  position: absolute;
+  top: -${BORDER_WIDTH}px;
+  left: -${BORDER_WIDTH}px;
+  pointer-events: none;
+  overflow: visible;
+}
 .cupcake-widget .cupcake-area {
   width: 100%;
   height: 100%;
@@ -142,10 +156,11 @@ export class CakeVisualization {
     widget.id = 'cupcake-widget-shared';
     widget.className = 'cupcake-widget shared';
     widget.hidden = true;
-    widget.innerHTML = `<div class="cupcake-area"></div>`;
+    widget.innerHTML = `<div class="cupcake-area"></div><svg class="shared-border" aria-hidden="true"></svg>`;
     document.body.appendChild(widget);
 
     this.el = widget;
+    this.sharedBorderEl = widget.querySelector('.shared-border');
     this.sharedAreaEl = widget.querySelector('.cupcake-area');
 
     const base = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
@@ -175,16 +190,21 @@ export class CakeVisualization {
       cupcakeWidget.hidden = true;
       cupcakeWidget.innerHTML = `<div class="cupcake-area"></div>`;
       document.body.appendChild(cupcakeWidget);
-      const label = document.createElement('img');
-      label.className = 'cupcake-label';
-      label.alt = `${chef} chef`;
-      label.src = assetUrl(`${chef}_chef_icon.png`);
-      label.hidden = true;
-      document.body.appendChild(label);
+      const makeLabel = () => {
+        const label = document.createElement('img');
+        label.className = 'cupcake-label';
+        label.alt = `${chef} chef`;
+        label.src = assetUrl(`${chef}_chef_icon.png`);
+        label.hidden = true;
+        document.body.appendChild(label);
+        return label;
+      };
 
       this.cupcakeWidgets[chef] = {
         el: cupcakeWidget,
-        labelEl: label,
+        labelEl: makeLabel(),
+        // This chef's hat in the pair above the shared widget
+        sharedLabelEl: makeLabel(),
         areaEl: cupcakeWidget.querySelector('.cupcake-area')
       };
     }
@@ -226,19 +246,27 @@ export class CakeVisualization {
     const purpleLeft = this.redOnRight ? leftSideX : rightSideX;
     place(this.cupcakeWidgets.red.el, redLeft);
     place(this.el, centerX - sharedWidth / 2, sharedWidth);
+    this.drawSharedBorder(sharedWidth, WIDGET_HEIGHT);
     place(this.cupcakeWidgets.purple.el, purpleLeft);
 
     // One cupcake size for all three widgets, chosen so the shared one fits every batch
     document.documentElement.style.setProperty('--cupcake-size', `${this.fitCupcakeSize(sharedWidth)}px`);
 
     // Center each chef-hat label just above its cupcake maker
-    const placeLabel = (labelEl, left) => {
-      const labelWidth = labelEl.offsetWidth || (LABEL_HEIGHT - 6) * (385 / 294);
+    const labelWidthOf = (labelEl) => labelEl.offsetWidth || (LABEL_HEIGHT - 6) * (385 / 294);
+    const placeLabelAt = (labelEl, labelLeft) => {
       labelEl.style.top = `${rowTop - LABEL_HEIGHT}px`;
-      labelEl.style.left = `${Math.max(0, left + (width - labelWidth) / 2)}px`;
+      labelEl.style.left = `${Math.max(0, labelLeft)}px`;
     };
+    const placeLabel = (labelEl, left) => placeLabelAt(labelEl, left + (width - labelWidthOf(labelEl)) / 2);
     placeLabel(this.cupcakeWidgets.red.labelEl, redLeft);
     placeLabel(this.cupcakeWidgets.purple.labelEl, purpleLeft);
+
+    // Both hats above the shared widget, each on the side nearest its own cupcake maker
+    const leftHat = this.cupcakeWidgets[this.redOnRight ? 'purple' : 'red'].sharedLabelEl;
+    const rightHat = this.cupcakeWidgets[this.redOnRight ? 'red' : 'purple'].sharedLabelEl;
+    placeLabelAt(leftHat, centerX - SHARED_LABEL_GAP / 2 - labelWidthOf(leftHat));
+    placeLabelAt(rightHat, centerX + SHARED_LABEL_GAP / 2);
 
     // Cow sits to the left of the map, vertically centered on it, shrinking to fit
     if (canvas) {
@@ -249,6 +277,18 @@ export class CakeVisualization {
       const cowHeight = this.cowEl.offsetHeight || cowWidth;
       this.cowEl.style.top = `${Math.max(0, mapRect.top + (mapRect.height - cowHeight) / 2)}px`;
     }
+  }
+
+  // Alternating red/purple dashed outline matching the widget's outer box
+  drawSharedBorder(width, height) {
+    const half = BORDER_WIDTH / 2;
+    const rect = (color, offset) => `<rect x="${half}" y="${half}" width="${width - BORDER_WIDTH}" height="${height - BORDER_WIDTH}"
+      rx="${BORDER_RADIUS - half}" fill="none" stroke="${color}" stroke-width="${BORDER_WIDTH}"
+      stroke-dasharray="${BORDER_DASH} ${BORDER_DASH}" stroke-dashoffset="${offset}" />`;
+    this.sharedBorderEl.setAttribute('width', width);
+    this.sharedBorderEl.setAttribute('height', height);
+    this.sharedBorderEl.innerHTML =
+      rect(CONFIG.visual.colors.player1, 0) + rect(CONFIG.visual.colors.player2, BORDER_DASH);
   }
 
   // Largest cupcake size at which SHARED_BATCH_CAPACITY batches fit in the shared widget
@@ -268,9 +308,10 @@ export class CakeVisualization {
   show() {
     this.ensureMounted();
     this.el.hidden = false;
-    Object.values(this.cupcakeWidgets).forEach(({ el, labelEl }) => {
+    Object.values(this.cupcakeWidgets).forEach(({ el, labelEl, sharedLabelEl }) => {
       el.hidden = false;
       labelEl.hidden = false;
+      sharedLabelEl.hidden = false;
     });
     this.cowEl.hidden = false;
     if (!this.cowHideTimeout) this.cowEl.src = this.cowIdleSrc;
@@ -281,9 +322,10 @@ export class CakeVisualization {
 
   hide() {
     if (this.el) this.el.hidden = true;
-    Object.values(this.cupcakeWidgets).forEach(({ el, labelEl }) => {
+    Object.values(this.cupcakeWidgets).forEach(({ el, labelEl, sharedLabelEl }) => {
       el.hidden = true;
       labelEl.hidden = true;
+      sharedLabelEl.hidden = true;
     });
     if (this.cowEl) this.cowEl.hidden = true;
     if (this.cowHideTimeout) {
