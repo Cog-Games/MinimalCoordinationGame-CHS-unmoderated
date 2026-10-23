@@ -99,6 +99,21 @@ export const CONFIG = {
       // tower resets at its first trial. Sum must equal numTrials.StagHunt.
       stagHuntPhaseRounds: [1, 4, 16],
       stagHuntOnboardingMapIds: ['2', '1', '5', '3', '9'],
+      // Game 2's rounds are scripted practice (AI partner only): the AI goes to
+      // the given oven, the participant is told where to go, and the round is
+      // replayed until the participant reaches the instructed oven type.
+      // `audio` is an optional recording in client/public; without it the
+      // instruction is spoken by the browser's text-to-speech.
+      stagHuntScriptedRounds: [
+        { human: 'small', partner: 'small', audio: 'Round 1.m4a',
+          text: "Let's practice! You go to a small oven, and the other chef goes to a small oven too." },
+        { human: 'big', partner: 'big', audio: 'Round 2.m4a',
+          text: "Let's practice! You and the other chef both go to the big oven." },
+        { human: 'small', partner: 'big', audio: 'Round 3.m4a',
+          text: "Let's practice! You go to a small oven, and the other chef goes to the big oven." },
+        { human: 'big', partner: 'small', audio: 'Round 4.m4a',
+          text: "Let's practice! You go to the big oven, and the other chef goes to a small oven." }
+      ],
 
       // Shuffle the 16 main maps once; keep onboarding separate.
       mapOrder: {
@@ -490,6 +505,15 @@ export const GameConfigUtils = {
       cursor += rounds;
     }
     return null;
+  },
+
+  // Scripted practice instructions for a Stag Hunt trial (Game 2), or null
+  getStagHuntScriptedRound(experimentType, trialIndex) {
+    if (experimentType !== 'StagHunt') return null;
+    if (CONFIG.game.players.player2.type === 'human') return null; // only an AI partner can be scripted
+    const info = this.getStagHuntGameRoundInfo(trialIndex);
+    if (info?.gameNumber !== 2) return null;
+    return CONFIG.game.experiments.stagHuntScriptedRounds?.[info.roundInGame - 1] || null;
   },
 
   getStagHuntGameRoundTitle(trialIndex) {

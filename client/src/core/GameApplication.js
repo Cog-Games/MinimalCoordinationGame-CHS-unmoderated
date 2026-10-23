@@ -516,6 +516,8 @@ export class GameApplication {
         questionnaireCompletedAt: data.questionnaireCompletedAt || null,
         experimentOrder: (CONFIG?.game?.experiments?.order) || [],
         allTrialsData: gsData.allTrialsData || [],
+        // Failed attempts at Game 2's scripted practice rounds (each was replayed)
+        scriptedPracticeRetryTrials: gsData.scriptedPracticeRetryTrials || [],
         questionnaireData: data.questionnaire || null,
         comprehensionCheckData: data.comprehensionCheck || null,
         cupcakeWidgetRedOnRight: this.experimentManager?.cakeVisualization?.redOnRight ?? null,

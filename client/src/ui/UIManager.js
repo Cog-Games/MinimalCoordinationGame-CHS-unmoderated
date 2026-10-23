@@ -500,7 +500,8 @@ export class UIManager {
       'collaboration',
       'stag-hunt-both-stag',
       'stag-hunt-human-rabbit',
-      'stag-hunt-human-nothing'
+      'stag-hunt-human-nothing',
+      'stag-hunt-practice-retry'
     ];
     if (!validMessageTypes.includes(messageType)) {
       console.warn('Invalid messageType. Falling back to collaboration feedback.');
@@ -563,6 +564,8 @@ export class UIManager {
       message = 'You made a cupcake!';
     } else if (messageType === 'stag-hunt-human-nothing') {
       message = 'Nothing added this round.';
+    } else if (messageType === 'stag-hunt-practice-retry') {
+      message = "Let's try that again!";
     }
 
     // Create overlay div positioned absolutely over the canvas

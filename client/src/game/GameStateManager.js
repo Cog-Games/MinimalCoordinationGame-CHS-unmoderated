@@ -1034,6 +1034,20 @@ export class GameStateManager {
     return this.stepCount >= CONFIG.game.maxGameLength;
   }
 
+  // Game 2 scripted practice: annotate the just-finished trial. A failed attempt
+  // moves out of allTrialsData (one row per round) into
+  // scriptedPracticeRetryTrials, because the round is replayed.
+  recordScriptedRoundOutcome(scriptedRound) {
+    const trials = this.experimentData.allTrialsData;
+    const last = trials[trials.length - 1];
+    if (!last || last.trialIndex !== this.trialData.trialIndex) return;
+    const retries = (this.experimentData.scriptedPracticeRetryTrials ||= []);
+    const attempt = retries.filter(t => t.trialIndex === last.trialIndex).length + 1;
+    last.scriptedRound = { ...scriptedRound, attempt };
+    if (!scriptedRound.followedInstruction) retries.push(trials.pop());
+    this.onDataChange?.('scripted_round_outcome');
+  }
+
   finalizeTrial(success, result = {}) {
     // Prevent duplicate finalization
     if (this.trialData._finalized) {

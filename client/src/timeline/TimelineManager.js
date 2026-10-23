@@ -1709,10 +1709,20 @@ export class TimelineManager {
       }
     }
 
+    // Game 2 scripted practice: show the round's instruction above the map and read it aloud
+    const scriptedRound = GameConfigUtils.getStagHuntScriptedRound(experimentType, trialIndex);
+    const instructionBannerHeight = 56;
+    const instructionBanner = scriptedRound
+      ? `<div style="box-sizing: border-box; height: ${instructionBannerHeight - 8}px; margin: 0 0 8px; padding: 0 18px; display: flex; align-items: center; justify-content: center; background: #f8fbff; border: 2px solid #007bff; border-radius: 12px; font-size: 18px; font-weight: 600; color: #1f2937;">${scriptedRound.text}</div>`
+      : '';
+    if (scriptedRound) {
+      this.playClipAudio(this.assetUrl(scriptedRound.audio), scriptedRound.text);
+    }
+
     // Stag Hunt shows the cupcake/cake widget row beneath the grid, so reserve room for it
     const showCakeRow = GameConfigUtils.isStagHuntExperiment(experimentType) && !(experimentType === 'StagHunt' && trialIndex === 0 && CONFIG.game.experiments.stagHuntPhaseRounds?.[0] === 1);
     const cakeRowMargin = 12;
-    const reservedHeight = 125 + (showCakeRow ? WIDGET_ROW_HEIGHT + cakeRowMargin : 0);
+    const reservedHeight = 125 + (showCakeRow ? WIDGET_ROW_HEIGHT + cakeRowMargin : 0) + (scriptedRound ? instructionBannerHeight : 0);
     const cakeRowSlot = showCakeRow
       ? `<div id="${WIDGET_ROW_SLOT_ID}" style="width: 100%; height: ${WIDGET_ROW_HEIGHT}px; margin-top: ${cakeRowMargin}px; flex: 0 0 auto;"></div>`
       : '';
@@ -1726,6 +1736,7 @@ export class TimelineManager {
       >
         <div style="text-align: center; max-width: 800px; width: 100%; display: flex; flex-direction: column; align-items: center;">
           <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">${title}</h3>
+          ${instructionBanner}
           <div id="game-canvas-container" style="margin: 0 auto; position: relative; display: flex; justify-content: center; width: 100%; max-width: 100%;">
             <!-- Game canvas will be inserted here by ExperimentManager -->
           </div>
@@ -1773,14 +1784,13 @@ export class TimelineManager {
     // Find the existing game canvas container
     const gameCanvasContainer = document.getElementById('game-canvas-container');
 
+    // ExperimentManager sets feedbackData.scriptedRetry when a scripted
+    // practice round must be replayed
+    const feedbackData = { success, experimentType, trialIndex, canvasContainer: gameCanvasContainer };
+
     if (gameCanvasContainer) {
       // Show feedback overlay on the existing game canvas
-      this.emit('show-trial-feedback', {
-        success,
-        experimentType,
-        trialIndex,
-        canvasContainer: gameCanvasContainer
-      });
+      this.emit('show-trial-feedback', feedbackData);
     } else {
       // Fallback: create a new container if game canvas not found
       this.container.innerHTML = `
@@ -1793,17 +1803,24 @@ export class TimelineManager {
         </div>
       `;
 
-      this.emit('show-trial-feedback', {
-        success,
-        experimentType,
-        trialIndex,
-        canvasContainer: document.getElementById('feedbackCanvasContainer')
-      });
+      feedbackData.canvasContainer = document.getElementById('feedbackCanvasContainer');
+      this.emit('show-trial-feedback', feedbackData);
     }
 
     // Auto-advance after feedback duration
     setTimeout(() => {
       console.log(`📊 Post-trial feedback completed for trial ${trialIndex}`);
+
+      if (feedbackData.scriptedRetry) {
+        // Replay the same round: drop this attempt's result (ExperimentManager
+        // archived its trial data) and queue the trial + feedback stages again
+        this.experimentData.experiments[experimentType]?.pop();
+        const trialStage = this.stages[this.currentStageIndex - 1];
+        const postTrialStage = this.stages[this.currentStageIndex];
+        this.stages.splice(this.currentStageIndex + 1, 0, { ...trialStage }, { ...postTrialStage });
+        this.nextStage();
+        return;
+      }
 
       // Check if we should continue to next trial or end the experiment
       if (GameConfigUtils.isTwoPlayerExperiment(experimentType) && CONFIG.game.successThreshold.enabled) {

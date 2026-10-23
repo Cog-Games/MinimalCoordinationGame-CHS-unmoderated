@@ -1,5 +1,6 @@
 import { CONFIG, GAME_OBJECTS, GameConfigUtils } from '../config/gameConfig.js';
 import { RLAgent } from '../ai/RLAgent.js';
+import { DP_ACTIONS } from '../ai/DiscountedJointDP.js';
 import { GptAgentClient } from '../ai/GptAgentClient.js';
 import { WeIntentAgent } from '../ai/WeIntentAgent.js';
 import { VlmAgentClient } from '../ai/VlmAgentClient.js';
@@ -454,17 +455,72 @@ export class ExperimentManager {
 
     if (!aiDirection) {
       if (!this.rlAgent) return { aiDirection: null, gptError };
-      const aiAction = this.rlAgent.getAIAction(
-        gameState.gridMatrix,
-        (this.aiPlayerNumber === 1) ? gameState.player1 : gameState.player2,
-        gameState.currentGoals,
-        (this.aiPlayerNumber === 1) ? gameState.player2 : gameState.player1,
-        this.buildRLContext(gameState)
-      );
+      const aiAction = this.getPlannerAction(gameState);
       aiDirection = this.actionToDirection(aiAction);
     }
 
     return { aiDirection, gptError };
+  }
+
+  // The AI's next move from the planner, or from the round's script during
+  // Game 2's scripted practice rounds.
+  getPlannerAction(gameState) {
+    const aiPos = (this.aiPlayerNumber === 1) ? gameState.player1 : gameState.player2;
+    const partnerPos = (this.aiPlayerNumber === 1) ? gameState.player2 : gameState.player1;
+    const td = this.gameStateManager.getCurrentTrialData();
+    const script = GameConfigUtils.getStagHuntScriptedRound(gameState.experimentType, td?.trialIndex);
+    if (script) return this.getScriptedAction(gameState, aiPos, script.partner, td);
+    return this.rlAgent.getAIAction(gameState.gridMatrix, aiPos, gameState.currentGoals, partnerPos, this.buildRLContext(gameState));
+  }
+
+  // Shortest-path step toward the scripted oven type ('small' = the small oven
+  // nearest the AI, chosen once per trial). Logged like a planner decision.
+  getScriptedAction(gameState, aiPos, targetType, td) {
+    const goals = gameState.currentGoals || [];
+    const goalTypes = gameState.currentGoalTypes || [];
+    const sameCell = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
+    const record = (decision) => {
+      if (td) (td.dpDecisions ||= []).push({ step: this.gameStateManager.stepCount, policy: 'scripted', targetType, aiPosition: [...aiPos], ...decision });
+    };
+
+    // Like the planner, the AI stays put once it has reached any oven
+    if (goals.some(g => sameCell(g, aiPos))) {
+      record({ locked: true, action: null });
+      return null;
+    }
+
+    const grid = gameState.gridMatrix;
+    const size = grid.length;
+    const firstStep = new Map(); // "r,c" -> action index of the first move on the shortest path
+    const distance = new Map([[`${aiPos[0]},${aiPos[1]}`, 0]]);
+    const queue = [aiPos];
+    while (queue.length) {
+      const [r, c] = queue.shift();
+      DP_ACTIONS.forEach(([dr, dc], a) => {
+        const nr = r + dr, nc = c + dc, key = `${nr},${nc}`;
+        if (nr < 0 || nc < 0 || nr >= size || nc >= size || distance.has(key)) return;
+        if (grid[nr][nc] === GAME_OBJECTS.obstacle) return;
+        distance.set(key, distance.get(`${r},${c}`) + 1);
+        firstStep.set(key, firstStep.get(`${r},${c}`) ?? a);
+        queue.push([nr, nc]);
+      });
+    }
+
+    if (!td?.scriptedPartnerTarget) {
+      const candidates = goals
+        .map((g, i) => ({ g, type: goalTypes[i] || 'small', d: distance.get(`${g[0]},${g[1]}`) }))
+        .filter(({ type, d }) => type === targetType && d !== undefined)
+        .sort((x, y) => x.d - y.d);
+      if (td && candidates.length) td.scriptedPartnerTarget = [...candidates[0].g];
+    }
+    const target = td?.scriptedPartnerTarget;
+    const actionIndex = target ? firstStep.get(`${target[0]},${target[1]}`) : undefined;
+    if (actionIndex === undefined) {
+      record({ action: null, target: target || null });
+      return null;
+    }
+    record({ action: actionIndex, target: [...target] });
+    return [...DP_ACTIONS[actionIndex]];
   }
 
   // Build an extra-context object for the joint RL planner so rewards and
@@ -732,13 +788,7 @@ export class ExperimentManager {
 
     if (!direction) {
       if (!this.rlAgent) return;
-      const aiAction = this.rlAgent.getAIAction(
-        gameState.gridMatrix,
-        (this.aiPlayerNumber === 1) ? gameState.player1 : gameState.player2,
-        gameState.currentGoals,
-        (this.aiPlayerNumber === 1) ? gameState.player2 : gameState.player1,
-        this.buildRLContext(gameState)
-      );
+      const aiAction = this.getPlannerAction(gameState);
       if (!aiAction) {
         return; // No movement
       }
@@ -770,7 +820,7 @@ export class ExperimentManager {
           const goals = Array.isArray(st?.currentGoals) ? st.currentGoals : [];
           if (goals.length > 0) {
             const ctx = this.buildRLContext(st);
-            setTimeout(() => this.rlAgent.precalculatePolicyForGoals(goals, experimentType, ctx), 0);
+            setTimeout(() => this.rlAgent.precalculatePolicyForGoals(goals, st?.experimentType, ctx), 0);
           }
         }
       } catch (_) { /* best-effort only */ }
@@ -1523,6 +1573,26 @@ export class ExperimentManager {
       } else {
         messageType = 'stag-hunt-human-nothing';
       }
+
+      // Game 2 scripted practice: replay the round (no rewards) until the
+      // participant reaches the oven type they were told to go to
+      const script = GameConfigUtils.getStagHuntScriptedRound(experimentType, trialIndex);
+      if (script) {
+        const humanOutcome = humanReachedBig ? 'big' : (humanReachedSmall ? 'small' : 'none');
+        const followedInstruction = humanOutcome === script.human;
+        this.gameStateManager.recordScriptedRoundOutcome({
+          instructedHuman: script.human,
+          scriptedPartner: script.partner,
+          humanOutcome,
+          followedInstruction
+        });
+        if (!followedInstruction) {
+          data.scriptedRetry = true; // read by TimelineManager to replay this round
+          this.uiManager.showTrialFeedbackInContainer(false, canvasContainer, 'stag-hunt-practice-retry');
+          return;
+        }
+      }
+
       if (this.lastCakeTrialIndex !== trialIndex) {
         this.cakeVisualization.applyOutcome({
           messageType,
