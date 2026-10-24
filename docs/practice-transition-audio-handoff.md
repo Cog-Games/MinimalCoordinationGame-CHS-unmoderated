@@ -1,21 +1,17 @@
-# Transition audio follow-up
+# Practice transition screens
 
 Continue from `codex/museum-default-entry` (the GitHub Pages deployment branch).
-Pull this branch before editing. The two transition screens currently have text only.
-They are rendered by `showPracticeChoiceInstructions(freeChoice)` in
-`client/src/timeline/TimelineManager.js`.
+Pull this branch before editing. The two transition screens are video-only
+instruction screens (`renderVideoInstruction` in `client/src/timeline/TimelineManager.js`),
+like the other Stag Hunt videos: playback is locked, and the green Continue
+button appears when the video ends.
 
-## Before guided practice
+| Stage | When | Instructions key | Video |
+|---|---|---|---|
+| `practice_guidance_intro` | Before guided practice | `StagHunt_practice_intro` | `client/public/practice instructions.mp4` |
+| `free_choice_intro` | After comprehension, before matchmaking | `StagHunt_free_choice_intro` | `client/public/game instructions.mp4` |
 
-“For the next four practice rounds, we will tell you and the other chef which oven to go to. Follow the arrow to your oven. After practice, you can choose for yourself.”
-
-## After comprehension, before matchmaking
-
-“Practice is finished! Now you’ll play with another chef. In the next games, you and the other chef can each choose which oven to go to. There will be no arrows telling you where to go.”
-
-Add audio-only recordings under `client/public/` and load them using `this.assetUrl(...)`.
-Stop playback when leaving the screen; handle rejected autoplay without blocking the Continue button.
-Avoid using MP4s with long silent video tracks: the old reward clips had 62-second video tracks despite only 3–5 seconds of audio.
+Avoid MP4s with long silent video tracks: the old reward clips had 62-second video tracks despite only 3–5 seconds of audio.
 
 ## Local verification
 

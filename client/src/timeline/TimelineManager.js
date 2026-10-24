@@ -331,7 +331,7 @@ export class TimelineManager {
 
     this.stages.push({
       type: 'practice_guidance_intro', experimentType, experimentIndex,
-      handler: () => this.showPracticeChoiceInstructions(false)
+      handler: () => this.showInstructionsStage('StagHunt_practice_intro', experimentIndex)
     });
 
     addGameRounds(PHASE2_ROUNDS);
@@ -347,7 +347,7 @@ export class TimelineManager {
     // --- Game 3 (Phase 4): remaining rounds ---
     this.stages.push({
       type: 'free_choice_intro', experimentType, experimentIndex,
-      handler: () => this.showPracticeChoiceInstructions(true)
+      handler: () => this.showInstructionsStage('StagHunt_free_choice_intro', experimentIndex)
     });
     this.stages.push({
       type: 'waiting_for_partner',
@@ -365,19 +365,6 @@ export class TimelineManager {
     this.hasShownPartnerFindingStage = true;
 
     addGameRounds(PHASE4_ROUNDS);
-  }
-
-  showPracticeChoiceInstructions(freeChoice) {
-    const title = freeChoice ? "You're ready to play!" : "Let's practice by following instructions!";
-    const text = freeChoice
-      ? 'Practice is finished! Now you’ll play with another chef. In the next games, you and the other chef can each choose which oven to go to. There will be no arrows telling you where to go.'
-      : 'For the next four practice rounds, we will tell you and the other chef which oven to go to. Follow the arrow to your oven. After practice, you can choose for yourself.';
-    this.container.innerHTML = `<div style="min-height:90vh;display:flex;align-items:center;justify-content:center;background:#f8f9fa;padding:24px"><div style="max-width:760px;text-align:center;background:white;padding:40px;border-radius:16px"><h1>${title}</h1><p style="font-size:26px;line-height:1.6">${text}</p><button id="practice-choice-continue" style="font-size:26px;padding:14px 32px;background:#28a745;color:white;border:0;border-radius:10px">${freeChoice ? 'Continue' : 'Start practice'}</button></div></div>`;
-    const button = document.getElementById('practice-choice-continue');
-    button.onclick = () => {
-      button.disabled = true;
-      this.nextStage();
-    };
   }
 
   /**
@@ -2531,6 +2518,16 @@ export class TimelineManager {
       'StagHunt_partner_intro': renderVideoInstruction({
         videoId: 'staghuntPartnerVideo',
         videoSrc: 'video3.mp4'
+      }),
+      // Before Game 2's guided practice rounds
+      'StagHunt_practice_intro': renderVideoInstruction({
+        videoId: 'staghuntPracticeIntroVideo',
+        videoSrc: 'practice instructions.mp4'
+      }),
+      // After the comprehension check, before matchmaking and the free-choice games
+      'StagHunt_free_choice_intro': renderVideoInstruction({
+        videoId: 'staghuntFreeChoiceIntroVideo',
+        videoSrc: 'game instructions.mp4'
       })
     };
 
