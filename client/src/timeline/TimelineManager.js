@@ -1084,7 +1084,7 @@ export class TimelineManager {
       {
         name: 'big_kitchen_cupcakes',
         prompt: 'How many cupcakes can you make in the big oven?',
-        promptAudio: 'Big kitchen.mp4',
+        promptAudio: 'Comprehension 1.mp4',
         options: ['1 cupcake', '5 cupcakes'],
         // Render the same cupcake image repeated per option so each cupcake is
         // the same size in both choices, rather than scaling one flat picture.
@@ -1106,7 +1106,7 @@ export class TimelineManager {
       {
         name: 'small_kitchen_cupcakes',
         prompt: 'How many cupcakes can you make in the small oven?',
-        promptAudio: 'Small kitchen.mp4',
+        promptAudio: 'Comprehension 3.mp4',
         options: ['1 cupcake', '5 cupcakes'],
         optionImages: ['cupcake-one.png', 'cupcake-one.png'],
         optionImageCounts: [1, 5],
