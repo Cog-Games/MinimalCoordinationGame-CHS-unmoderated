@@ -1083,7 +1083,7 @@ export class TimelineManager {
     const questions = [
       {
         name: 'big_kitchen_cupcakes',
-        prompt: 'How many cupcakes can you make in the big kitchen?',
+        prompt: 'How many cupcakes can you make in the big oven?',
         promptAudio: 'Big kitchen.mp4',
         options: ['1 cupcake', '5 cupcakes'],
         // Render the same cupcake image repeated per option so each cupcake is
@@ -1105,7 +1105,7 @@ export class TimelineManager {
       },
       {
         name: 'small_kitchen_cupcakes',
-        prompt: 'How many cupcakes can you make in the small kitchen?',
+        prompt: 'How many cupcakes can you make in the small oven?',
         promptAudio: 'Small kitchen.mp4',
         options: ['1 cupcake', '5 cupcakes'],
         optionImages: ['cupcake-one.png', 'cupcake-one.png'],
