@@ -15,9 +15,9 @@ const defaultServerUrl = (typeof window !== 'undefined' && window.location && wi
   ? window.location.origin
   : 'http://localhost:3001';
 
-// The default study partner is the calibrated discounted joint-DP baseline.
+// The default study partner is SA v1 (lambda=.2, pSignal=.75).
 // Explicit ?ai= overrides still work through GameConfigUtils.setPlayerType.
-const participantRLCondition = 'joint';
+const participantRLCondition = 'shared-agency';
 
 export const CONFIG = {
   // Debug / logging configuration
@@ -73,7 +73,7 @@ export const CONFIG = {
       },
       player2: {
         // Types: 'human' | 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_individual' | 'rl_joint' | 'we_intent_js'
-        type: 'rl_joint',
+        type: 'sa',
         color: 'orange',
         description: 'Human, GPT, or RL partner'
       }
@@ -170,6 +170,7 @@ export const CONFIG = {
     agent: {
       // RL mode for player2 when using RL: 'individual' or 'joint'
       type: 'joint',
+      sharedAgency: { lambda: .2, pSignal: .75, policyVersion: 'shared-agency-v1-l02-p075' },
       stagHuntDP: { enabled: true, cost: 0.30, gamma: 0.9, tau: 0.10, horizon: 60, policyVersion: 'shared-cakes-step-beta3-v1', normalization: 'unit-step-cost', normalizedBeta: 3, jointStagReward: 5, hareReward: 1 },
       delay: 500,
       independentDelay: 300,
@@ -300,7 +301,7 @@ export const CONFIG = {
     matchPlayReadyTimeout: 10000,
     // Fallback AI partner type when human-human matching fails
     // Allowed: 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_individual' | 'rl_joint' | 'we_intent_js'
-    fallbackAIType: 'rl_joint',
+    fallbackAIType: 'sa',
     // Partner inactivity settings
     inactivityFallback: {
       // Enable automatic fallback to AI when partner is inactive
@@ -380,11 +381,15 @@ export const GameConfigUtils = {
     const normalized = (type === 'ai') ? 'rl_joint' : type;
     const allowed = [
       'human', 'gpt', 'gpt-ToM', 'vlm', 'vlm-ToM',
-      'rl_individual', 'rl_joint', 'rl_individual_python', 'we_intent_js'
+      'sa', 'rl_individual', 'rl_joint', 'rl_individual_python', 'we_intent_js'
     ];
     if (!allowed.includes(normalized)) return;
     CONFIG.game.players[`player${playerIndex}`].type = normalized;
 
+    if (normalized === 'sa') {
+      CONFIG.game.agent.type = 'joint';
+      CONFIG.game.studyRLCondition = 'shared-agency';
+    }
     if (normalized === 'rl_joint') {
       CONFIG.game.agent.type = 'joint';
       if (playerIndex === 2) CONFIG.game.studyRLCondition = 'joint';

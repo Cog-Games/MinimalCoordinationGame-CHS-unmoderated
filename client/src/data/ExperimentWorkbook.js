@@ -12,7 +12,7 @@ if (trials.length > 0) {
   const processed = trials.map(t => {
     const o = {};
     for (const k in t) {
-      if (k === 'events' || k === 'dpDecisions') continue; // One event per row below.
+      if (k === 'events' || k === 'dpDecisions' || k === 'saBeliefUpdates') continue; // One event per row below.
       const v = t[k];
       // Flatten arrays/objects for Excel cells
       o[k] = (Array.isArray(v) || (v && typeof v === 'object')) ? JSON.stringify(v) : v;
@@ -90,7 +90,7 @@ if (trials.length > 0) {
   XLSX.utils.book_append_sheet(wb, ws, 'ExperimentData');
 }
 
-for (const [field, sheetName] of [['events', 'Events'], ['dpDecisions', 'AgentDecisions']]) {
+for (const [field, sheetName] of [['events', 'Events'], ['dpDecisions', 'AgentDecisions'], ['saBeliefUpdates', 'SABeliefUpdates']]) {
   const rows = [['sessionId', 'trialId', 'trialIndex', 'turnId', 'type', 'at', 'elapsedMs', 'payload']];
   for (const trial of trials) {
     for (const event of trial[field] || []) {
@@ -118,6 +118,7 @@ const partnerAgentType = (function(){
       return 'gpt-4o'; // matches the configured GPT_MODEL in .env
     }
   }
+  if (t === 'sa') return 'shared-agency';
   if (t === 'rl_joint') return 'joint-rl';
   if (t === 'rl_individual') return 'individual-rl';
   if (t === 'ai') return (CONFIG?.game?.agent?.type === 'individual') ? 'individual-rl' : 'joint-rl'; // legacy safety

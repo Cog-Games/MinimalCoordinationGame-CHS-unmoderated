@@ -1,4 +1,5 @@
 import { CONFIG, GAME_OBJECTS, GameConfigUtils } from '../config/gameConfig.js';
+import { SharedAgencyAgent } from '../ai/SharedAgencyAgent.js';
 import { RLAgent } from '../ai/RLAgent.js';
 import { DP_ACTIONS } from '../ai/DiscountedJointDP.js';
 import { GptAgentClient } from '../ai/GptAgentClient.js';
@@ -18,6 +19,8 @@ export class ExperimentManager {
     this.cakeVisualization = new CakeVisualization();
     this.lastCakeTrialIndex = null;
     this.rlAgent = new RLAgent();
+    this.sharedAgencyAgent = new SharedAgencyAgent();
+    this.gameStateManager.onAgentTurnCommitted = (before, after, step, trial) => this.sharedAgencyAgent.observeTurn(before, after, step, trial);
     this.gptClient = new GptAgentClient();
     this.weIntentAgent = new WeIntentAgent();
     this.vlmClient = new VlmAgentClient();
@@ -470,7 +473,11 @@ export class ExperimentManager {
     // Scripted target/start must persist across moves; the public getter returns a copy.
     const td = this.gameStateManager.trialData;
     const script = GameConfigUtils.getStagHuntScriptedRound(gameState.experimentType, td?.trialIndex);
-    if (script) return this.getScriptedAction(gameState, aiPos, script.partner, td, script.partnerPath);
+    if (script) { if(td) td.effectiveAgentPolicy='scripted-practice'; return this.getScriptedAction(gameState, aiPos, script.partner, td, script.partnerPath); }
+    if (gameState.experimentType === 'StagHunt' && CONFIG.game.players[`player${this.aiPlayerNumber}`].type === 'sa') {
+      td.effectiveAgentPolicy='shared-agency-v1-l02-p075';
+      return this.sharedAgencyAgent.action(gameState, td, this.aiPlayerNumber-1, this.gameStateManager.stepCount);
+    }
     return this.rlAgent.getAIAction(gameState.gridMatrix, aiPos, gameState.currentGoals, partnerPos, this.buildRLContext(gameState));
   }
 

@@ -707,6 +707,7 @@ export class GameStateManager {
       this.stepCount++;
 
       // Check for trial completion
+      this.onAgentTurnCommitted?.(stateBefore, this.currentState, this.stepCount-1, this.trialData);
       const trialComplete = this.checkTrialCompletion();
       this.recordEvent('turn_committed', { turnId: this.stepCount - 1, actor: playerIndex, direction, stateBefore, stateAfter: this.currentState });
 
@@ -810,6 +811,7 @@ export class GameStateManager {
       this.stepCount++;
 
       // Check completion
+      this.onAgentTurnCommitted?.(stateBefore, this.currentState, this.stepCount-1, this.trialData);
       results.trialComplete = this.checkTrialCompletion();
       results.newPositions = { player1: next1, player2: next2 };
       this.recordEvent('turn_committed', { turnId: this.stepCount - 1, actions: [humanDirection, aiDirection], stateBefore, stateAfter: this.currentState });
@@ -1303,6 +1305,8 @@ export class GameStateManager {
       case 'vlmtom':
         const vmodelTom = CONFIG?.game?.agent?.vlm?.model;
         return (vmodelTom && String(vmodelTom).trim()) ? String(vmodelTom) : 'vlm-ToM';
+      case 'sa':
+        return 'shared-agency';
       case 'rl_joint':
       case 'joint':
         return 'joint-rl';
@@ -1379,6 +1383,7 @@ export class GameStateManager {
         }
         return t;
       }
+      if (t === 'sa') return 'shared-agency';
       if (t === 'rl_joint') return 'joint-rl';
       if (t === 'rl_individual') return 'individual-rl';
       if (t === 'rl_individual_python') return 'individual-rl-python';

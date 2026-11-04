@@ -53,7 +53,7 @@ export class GameApplication {
     const aiParam = urlParams.get('ai');
     if (CONFIG.server.staticAI) {
       mode = 'human-ai';
-      GameConfigUtils.setPlayerType(2, 'rl_joint');
+      GameConfigUtils.setPlayerType(2, ['sa', 'rl_joint'].includes(aiParam) ? aiParam : 'sa');
     } else if (aiParam) {
       // Accept: 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_joint' | 'rl_individual' | 'we_intent_js' | legacy 'ai'
       GameConfigUtils.setPlayerType(2, aiParam);
@@ -147,7 +147,7 @@ export class GameApplication {
     const skipNetwork = CONFIG.server.staticAI || urlParams.get('skipNetwork') === 'true';
 
     // Default to configured fallback AI when not explicitly set
-    if (!['gpt', 'gpt-ToM', 'vlm', 'vlm-ToM', 'human', 'rl_joint', 'rl_individual', 'rl_individual_python', 'we_intent_js'].includes(CONFIG.game.players.player2.type)) {
+    if (!['gpt', 'gpt-ToM', 'vlm', 'vlm-ToM', 'human', 'sa', 'rl_joint', 'rl_individual', 'rl_individual_python', 'we_intent_js'].includes(CONFIG.game.players.player2.type)) {
       GameConfigUtils.setPlayerType(2, CONFIG.multiplayer.fallbackAIType || 'rl_joint');
     }
     this.uiManager.setPlayerInfo(0, 'human-ai');
