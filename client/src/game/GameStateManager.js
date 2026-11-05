@@ -159,6 +159,8 @@ export class GameStateManager {
     this.trialData.currentPlayerIndex = [];
     this.trialData.gptErrorEvents = [];
     this.trialData.dpDecisions = [];
+    this.trialData.saBeliefUpdates = [];
+    for (const key of ['agentModel', 'agentPolicyVersion', 'agentSeed', 'saLambda', 'saPSignal', 'effectiveAgentPolicy']) delete this.trialData[key];
     this.trialData.scriptedRouteStart = null;
     this.trialData.scriptedPartnerTarget = null;
     this.trialData.scriptedPartnerPath = null;

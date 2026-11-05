@@ -14,10 +14,10 @@ assert.equal(CONFIG.game.players.player2.type,'sa');assert.equal(CONFIG.multipla
 GameConfigUtils.setPlayerType(2,'rl_joint');assert.equal(CONFIG.game.studyRLCondition,'joint');GameConfigUtils.setPlayerType(2,'sa');assert.equal(CONFIG.game.studyRLCondition,'shared-agency');
 const log=console.log;console.log=()=>{};
 function humanMove(g,target){const st=g.currentState,p=st.player1;if(st.currentGoals.some(q=>eq(q,p)))return null;const queue=[[p,null]],seen=new Set([String(p)]);for(let i=0;i<queue.length;i++){const [q,first]=queue[i];if(eq(q,target))return names[first];for(let a=0;a<4;a++){const x=q.map((v,k)=>v+DP_ACTIONS[a][k]);if(x.some(v=>v<0||v>=9)||st.gridMatrix[x[0]][x[1]]===4||seen.has(String(x)))continue;if(st.currentGoals.some(z=>eq(z,x))&&!eq(x,target))continue;seen.add(String(x));queue.push([x,first??a]);}}throw Error('No human path');}
+const g=new GameStateManager();const ctl=Object.create(ExperimentManager.prototype);ctl.gameStateManager=g;ctl.aiPlayerNumber=2;ctl.sharedAgencyAgent=new SharedAgencyAgent();g.onAgentTurnCommitted=(b,a,t,td)=>ctl.sharedAgencyAgent.observeTurn(b,a,t,td);
 try {
  for(let i=1;i<=20;i++){
-  const practice=i<=4,map=StagHuntMaps[String(practice?[1,5,3,9][i-1]:i-4)][0];const g=new GameStateManager();g.initializeTrial(practice?i:i,'StagHunt',loader.normalizeStagHuntMap(map));
-  const ctl=Object.create(ExperimentManager.prototype);ctl.gameStateManager=g;ctl.aiPlayerNumber=2;ctl.sharedAgencyAgent=new SharedAgencyAgent();g.onAgentTurnCommitted=(b,a,t,td)=>ctl.sharedAgencyAgent.observeTurn(b,a,t,td);
+  const practice=i<=4,map=StagHuntMaps[String(practice?[1,5,3,9][i-1]:i-4)][0];g.initializeTrial(practice?i:i,'StagHunt',loader.normalizeStagHuntMap(map));
   const script=practice?CONFIG.game.experiments.stagHuntScriptedRounds[i-1]:null;const target=(script?script.human==='big':i%2===0)?map.stag:map.rabbits.reduce((best,p)=>Math.abs(p[0]-map.red[0])+Math.abs(p[1]-map.red[1])<Math.abs(best[0]-map.red[0])+Math.abs(best[1]-map.red[1])?p:best);
   let reference,rr;
   for(let step=0;step<60;step++){

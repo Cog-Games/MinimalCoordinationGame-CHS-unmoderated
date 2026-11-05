@@ -5,10 +5,10 @@ export function seededRandom(seed) {return () => {let t=seed+=0x6D2B79F5;t=Math.
 export class SharedAgencyAgent {
   constructor(){this.trial=null;this.model=null;this.agent=null;this.lastRecord=null;}
   action(state,trial,actor,step) {
-    if(this.trial!==trial || this.actor!==actor){
+    if(this.trial!==trial || this.trialId!==trial.trialId || this.actor!==actor){
       const grid=state.gridMatrix.map(row=>row.map(x=>x===4?4:0));
       this.model=new PlanModel(grid,state.currentGoals,state.currentGoalTypes);
-      this.agent=new SAAgent(this.model,actor,SA_PARAMETERS);this.actor=actor;this.trial=trial;
+      this.agent=new SAAgent(this.model,actor,SA_PARAMETERS);this.actor=actor;this.trial=trial;this.trialId=trial.trialId;
       const seed=globalThis.crypto?.getRandomValues(new Uint32Array(1))[0] ?? Math.floor(Math.random()*2**32);
       this.random=seededRandom(seed);this.lastRecord=null;
       trial.agentPolicyVersion=SA_PARAMETERS.policyVersion;trial.saLambda=SA_PARAMETERS.lambda;trial.saPSignal=SA_PARAMETERS.pSignal;trial.agentSeed=seed;
@@ -23,7 +23,7 @@ export class SharedAgencyAgent {
     return decision.action==null?null:[...DP_ACTIONS[decision.action]];
   }
   observeTurn(before,after,step,trial){
-    if(trial!==this.trial || !this.agent)return;
+    if(trial!==this.trial || trial.trialId!==this.trialId || !this.agent)return;
     const pos=[before.player1,before.player2],next=[after.player1,after.player2];
     const actions=pos.map((p,i)=>{const a=DP_ACTIONS.findIndex(d=>p[0]+d[0]===next[i][0]&&p[1]+d[1]===next[i][1]);return a<0?null:a;});
     this.agent.observe(pos,actions,Math.max(0,SA_PARAMETERS.horizon-step));
