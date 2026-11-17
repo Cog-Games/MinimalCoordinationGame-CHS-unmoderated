@@ -13,3 +13,7 @@ Drive verification file: 12igMFfVbyVEzxjSFLEikOt8af5z4rZjP. No prior participant
 The live game reuses its trialData object. SA previously reset by object identity, so later rounds could reuse an earlier map, seed and beliefs, causing invalid actions or an apparent goal lock. Reset now checks the unique trialId; observation callbacks also check trialId. SA metadata and belief-update arrays are cleared at trial initialization. Policy parameters are unchanged. Earlier SA sessions require review for cross-trial contamination; this fix does not rewrite collected data.
 
 Regression coverage now reuses the same game state manager and SA wrapper across all four practice and sixteen formal maps (the earlier test incorrectly constructed a new manager every trial). The pre-fix run fails with 'DP player outside walkable map'; the fixed run passes, including a separate independent-movement test after the human reaches a goal and XLSX round trips.
+
+## 2026-11-17: random 50/50 partner assignment
+
+The root URL no longer always means SA. Each session is randomly assigned (50/50) either SA (`sa`) or the joint-RL baseline (`rl_joint`) for the free-choice games, once at page load; the four scripted practice trials are unchanged. `?ai=sa` or `?ai=rl_joint` still forces a partner (for testing). The assignment is saved per session as `aiPartnerCondition` and `aiPartnerRandomized` (false when forced by `?ai=`), in RawJSON and the ExperimentData/session sheets; per-trial `effectiveAgentPolicy` still records the policy actually used. Code: `GameApplication.start()`.

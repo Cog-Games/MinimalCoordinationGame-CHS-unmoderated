@@ -34,6 +34,8 @@ if (trials.length > 0) {
     o.participantAgeTotalDays = exportObj.participantAgeTotalDays ?? '';
     o.participantIndex = exportObj.participantIndex || '';
     o.studySetting = exportObj.studySetting || 'remote';
+    o.aiPartnerCondition = exportObj.aiPartnerCondition || '';
+    o.aiPartnerRandomized = exportObj.aiPartnerRandomized ?? '';
     o.parentEmail = exportObj.parentEmail || '';
     o.parentEmailUse = exportObj.parentEmailUse || '';
     // Add current player number (1 or 2) for human-human mode analysis
@@ -56,7 +58,7 @@ if (trials.length > 0) {
     'trialIndex', 'experimentType', 'partnerAgentType',
     'currentPlayer', 'participantId', 'lookitResponseId', 'lookitChildId', 'roomId',
     'saveCheckpoint', 'saveCheckpointTime',
-    'participantIndex', 'studySetting', 'parentEmail', 'parentEmailUse',
+    'participantIndex', 'studySetting', 'aiPartnerCondition', 'aiPartnerRandomized', 'parentEmail', 'parentEmailUse',
     'participantDob', 'participantAgeReferenceDate',
     'participantAgeYears', 'participantAgeMonths', 'participantAgeDays', 'participantAgeTotalDays',
     'humanPlayerIndex', 'aiPlayerIndex',
@@ -154,6 +156,8 @@ const metaRows = [
   ['dataSaveCheckpointTimes', JSON.stringify(exportObj.dataSaveCheckpointTimes || {})],
   ['participantIndex', exportObj.participantIndex || ''],
   ['studySetting', exportObj.studySetting || 'remote'],
+  ['aiPartnerCondition', exportObj.aiPartnerCondition || ''],
+  ['aiPartnerRandomized', exportObj.aiPartnerRandomized ?? ''],
   ['parentEmail', exportObj.parentEmail || ''],
   ['parentEmailUse', exportObj.parentEmailUse || ''],
   ['participantDob', exportObj.participantDob || ''],
@@ -190,6 +194,8 @@ const participantInfoRows = [
   ['saveCheckpointTime', exportObj.saveCheckpointTime || ''],
   ['participantIndex', exportObj.participantIndex || ''],
   ['studySetting', exportObj.studySetting || 'remote'],
+  ['aiPartnerCondition', exportObj.aiPartnerCondition || ''],
+  ['aiPartnerRandomized', exportObj.aiPartnerRandomized ?? ''],
   ['parentEmail', exportObj.parentEmail || ''],
   ['parentEmailUse', exportObj.parentEmailUse || ''],
   ['participantDob', exportObj.participantDob || ''],

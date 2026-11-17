@@ -51,12 +51,21 @@ export class GameApplication {
     const urlParams = new URLSearchParams(window.location.search);
     this.useTimelineFlow = urlParams.get('timeline') !== 'false' && useTimeline;
     const aiParam = urlParams.get('ai');
-    if (CONFIG.server.staticAI) {
-      mode = 'human-ai';
-      GameConfigUtils.setPlayerType(2, ['sa', 'rl_joint'].includes(aiParam) ? aiParam : 'sa');
-    } else if (aiParam) {
-      // Accept: 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_joint' | 'rl_individual' | 'we_intent_js' | legacy 'ai'
-      GameConfigUtils.setPlayerType(2, aiParam);
+    // Study condition: without an explicit ?ai=sa / ?ai=rl_joint, each participant
+    // is randomly assigned (50/50) the SA or joint-RL partner for the session.
+    const studyPartners = ['sa', 'rl_joint'];
+    const randomizePartner = !studyPartners.includes(aiParam) && (CONFIG.server.staticAI || !aiParam);
+    const partnerType = randomizePartner
+      ? studyPartners[Math.random() < 0.5 ? 0 : 1]
+      : aiParam;
+    if (studyPartners.includes(partnerType)) {
+      this.aiPartnerAssignment = { partner: partnerType, randomized: randomizePartner };
+      console.log(`🤖 AI partner: ${partnerType} (${randomizePartner ? 'random 50/50' : 'set by ?ai='})`);
+    }
+    if (CONFIG.server.staticAI) mode = 'human-ai';
+    if (randomizePartner || aiParam) {
+      // Accept: 'sa' | 'gpt' | 'gpt-ToM' | 'vlm' | 'vlm-ToM' | 'rl_joint' | 'rl_individual' | 'we_intent_js' | legacy 'ai'
+      GameConfigUtils.setPlayerType(2, partnerType);
     }
 
     console.log(`Starting application with timeline flow: ${this.useTimelineFlow}`);
@@ -523,6 +532,10 @@ export class GameApplication {
         participantAgeTotalDays: data.participantAgeTotalDays ?? null,
         participantIndex: data.participantIndex || null,
         studySetting: data.studySetting || 'remote',
+        // Session's AI partner condition: 'sa' or 'rl_joint', and whether it was
+        // randomly assigned (false when forced with ?ai=)
+        aiPartnerCondition: this.aiPartnerAssignment?.partner || null,
+        aiPartnerRandomized: this.aiPartnerAssignment?.randomized ?? null,
         parentEmail: data.parentEmail || null,
         parentEmailUse: data.studySetting === 'museum' ? null : (data.parentEmailUse || 'payment_and_child_certificate_only'),
         successThreshold: gsData.successThreshold || {},
