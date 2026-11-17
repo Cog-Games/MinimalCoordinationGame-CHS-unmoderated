@@ -372,6 +372,19 @@ export class TimelineManager {
    */
   start() {
     this.createTimelineStages();
+    // Local rehearsal only: jump straight to Game 3 (the free-choice rounds).
+    if (['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) &&
+        this.getBooleanUrlParam(['game3Only'])) {
+      const firstGame3Trial = (CONFIG.game.experiments.stagHuntPhaseRounds || [1, 4]).slice(0, 2).reduce((a, b) => a + b, 0);
+      this.stages = this.stages.filter(stage => stage.experimentType === 'StagHunt' &&
+        ['fixation', 'trial', 'post-trial'].includes(stage.type) && stage.trialIndex >= firstGame3Trial);
+      this.stages.push({ type: 'practice_test_complete', handler: () => {
+        this.container.innerHTML = `<div style="padding:60px;text-align:center"><h1>Game 3 test complete</h1><p>Refresh to test again.</p></div>`;
+      }});
+      this.currentStageIndex = 0;
+      this.runCurrentStage();
+      return;
+    }
     // Local rehearsal only: preserve original trial indices/map sampling and retries.
     if (['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) &&
         this.getBooleanUrlParam(['practiceOnly', 'practiceFlowTest'])) {
@@ -1693,7 +1706,7 @@ export class TimelineManager {
     // Stag Hunt shows the cupcake/cake widget row beneath the grid, so reserve room for it
     const showCakeRow = GameConfigUtils.isStagHuntExperiment(experimentType) && !(experimentType === 'StagHunt' && trialIndex === 0 && CONFIG.game.experiments.stagHuntPhaseRounds?.[0] === 1);
     const cakeRowMargin = 12;
-    const reservedHeight = 125 + (showCakeRow ? WIDGET_ROW_HEIGHT + cakeRowMargin : 0) + (scriptedRound ? instructionBannerHeight : 0);
+    const reservedHeight = 95 + (showCakeRow ? WIDGET_ROW_HEIGHT + cakeRowMargin : 0) + (scriptedRound ? instructionBannerHeight : 0);
     const cakeRowSlot = showCakeRow
       ? `<div id="${WIDGET_ROW_SLOT_ID}" style="width: 100%; height: ${WIDGET_ROW_HEIGHT}px; margin-top: ${cakeRowMargin}px; flex: 0 0 auto;"></div>`
       : '';
@@ -1703,7 +1716,7 @@ export class TimelineManager {
       <div
         data-grid-fit-container="true"
         data-grid-reserved-height="${reservedHeight}"
-        style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 10px 16px 48px; overflow: hidden;"
+        style="box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: #f8f9fa; padding: 10px 16px 16px; overflow: hidden;"
       >
         <div style="text-align: center; max-width: 800px; width: 100%; display: flex; flex-direction: column; align-items: center;">
           <h3 id="game-title" style="margin: 4px 0 10px; font-size: 18px; line-height: 1.2;">${title}</h3>

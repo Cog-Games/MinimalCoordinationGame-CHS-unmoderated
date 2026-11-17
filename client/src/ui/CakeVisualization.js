@@ -7,14 +7,16 @@
 import { CONFIG } from '../config/gameConfig.js';
 
 const WIDGET_GAP = 24;
-const WIDGET_HEIGHT = 280;
+const WIDGET_HEIGHT = 170;
+// Solo cupcake makers' width (px); the shared one is SHARED_WIDTH_RATIO times wider
+const SOLO_WIDGET_WIDTH = 300;
 // The middle (shared) widget is this much wider than the solo cupcake makers
 const SHARED_WIDTH_RATIO = 1.5;
 // Chef Cowlie stands to the left of the map
 const COW_WIDTH = 230;
 const COW_CELEBRATE_DURATION = 2400;
 // Chef-hat labels sit above the cupcake makers (both hats above the shared one)
-const LABEL_HEIGHT = 56;
+const LABEL_HEIGHT = 40;
 const SHARED_LABEL_GAP = 16;
 // Shared widget's border: alternating red/purple dashes (drawn as SVG, since a
 // CSS dashed border can only be one color)
@@ -26,12 +28,12 @@ export const WIDGET_ROW_HEIGHT = LABEL_HEIGHT + WIDGET_HEIGHT;
 export const WIDGET_ROW_SLOT_ID = 'cake-widget-row-slot';
 // Cupcakes added to the shared widget when both chefs reach the big kitchen
 const SHARED_BATCH_SIZE = 5;
-// The shared widget must fit this many batches (one per Phase 4 map); the
-// cupcake size shrinks as needed so they all fit
-const SHARED_BATCH_CAPACITY = 16;
+// The widgets must fit this many rounds' cupcakes (one per Phase 4 map); the
+// cupcake size is fixed for the whole game, chosen so they all fit
+const ROUND_CAPACITY = 16;
 // Cupcake sizing (px); every cupcake on screen uses the same size
-const MAX_CUPCAKE_SIZE = 28;
-const MIN_CUPCAKE_SIZE = 10;
+const MAX_CUPCAKE_SIZE = 30;
+const MIN_CUPCAKE_SIZE = 8;
 const CUPCAKE_ASPECT = 646 / 478; // height / width of cupcake.png
 // Layout metrics, kept in sync with STYLE below
 const WIDGET_INSET = 14 + 3; // padding + border, per side
@@ -230,11 +232,10 @@ export class CakeVisualization {
 
     const rowTop = (slot ? rect.top : rect.bottom + WIDGET_GAP) + LABEL_HEIGHT;
     const centerX = rect.left + rect.width / 2;
-    // Solo cupcake makers match the map's width and the shared one is
+    // Solo cupcake makers are SOLO_WIDGET_WIDTH wide and the shared one is
     // SHARED_WIDTH_RATIO times wider, all shrinking together only if the row won't fit on screen
-    const mapWidth = canvas?.getBoundingClientRect().width || rect.width;
     const availableWidth = window.innerWidth - 4 * WIDGET_GAP;
-    const width = Math.max(120, Math.floor(Math.min(mapWidth, availableWidth / (2 + SHARED_WIDTH_RATIO))));
+    const width = Math.max(120, Math.floor(Math.min(SOLO_WIDGET_WIDTH, availableWidth / (2 + SHARED_WIDTH_RATIO))));
     const sharedWidth = Math.floor(width * SHARED_WIDTH_RATIO);
 
     const place = (el, left, w = width) => {
@@ -251,8 +252,8 @@ export class CakeVisualization {
     this.drawSharedBorder(sharedWidth, WIDGET_HEIGHT);
     place(this.cupcakeWidgets.purple.el, purpleLeft);
 
-    // One cupcake size for all three widgets, chosen so the shared one fits every batch
-    document.documentElement.style.setProperty('--cupcake-size', `${this.fitCupcakeSize(sharedWidth)}px`);
+    // One cupcake size for all three widgets, as big as the current contents allow
+    document.documentElement.style.setProperty('--cupcake-size', `${this.fitCupcakeSize(sharedWidth, width)}px`);
 
     // Center each chef-hat label just above its cupcake maker
     const labelWidthOf = (labelEl) => labelEl.offsetWidth || (LABEL_HEIGHT - 6) * (385 / 294);
@@ -293,16 +294,18 @@ export class CakeVisualization {
       rect(CONFIG.visual.colors.player1, 0) + rect(CONFIG.visual.colors.player2, BORDER_DASH);
   }
 
-  // Largest cupcake size at which SHARED_BATCH_CAPACITY batches fit in the shared widget
-  fitCupcakeSize(sharedWidth) {
-    const innerW = sharedWidth - 2 * WIDGET_INSET;
+  // Largest cupcake size at which ROUND_CAPACITY rounds of cupcakes fit in every widget
+  fitCupcakeSize(sharedWidth, soloWidth) {
     const innerH = WIDGET_HEIGHT - 2 * WIDGET_INSET;
+    const capacity = (innerW, itemW, itemH) =>
+      Math.floor((innerW + AREA_GAP) / (itemW + AREA_GAP)) * Math.floor((innerH + AREA_GAP) / (itemH + AREA_GAP));
+    const sharedBatches = ROUND_CAPACITY;
+    const soloCupcakes = ROUND_CAPACITY;
     for (let size = MAX_CUPCAKE_SIZE; size > MIN_CUPCAKE_SIZE; size--) {
       const batchW = SHARED_BATCH_SIZE * size + (SHARED_BATCH_SIZE - 1) * BATCH_GAP + 2 * BATCH_PAD_X;
       const batchH = size * CUPCAKE_ASPECT + 2 * BATCH_PAD_Y;
-      const cols = Math.floor((innerW + AREA_GAP) / (batchW + AREA_GAP));
-      const rows = Math.floor((innerH + AREA_GAP) / (batchH + AREA_GAP));
-      if (cols * rows >= SHARED_BATCH_CAPACITY) return size;
+      if (capacity(sharedWidth - 2 * WIDGET_INSET, batchW, batchH) >= sharedBatches &&
+          capacity(soloWidth - 2 * WIDGET_INSET, size, size * CUPCAKE_ASPECT) >= soloCupcakes) return size;
     }
     return MIN_CUPCAKE_SIZE;
   }

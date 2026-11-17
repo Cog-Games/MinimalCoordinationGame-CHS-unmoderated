@@ -211,7 +211,7 @@ export const CONFIG = {
 
   // Visual settings
   visual: {
-    canvasSize: 380, // (cellSize + padding) * matrixSize + padding = (40 + 2) * 9 + 2 = 380
+    canvasSize: 440, // max grid size (px); shrinks to fit the screen
     cellSize: 40,
     padding: 2,
     colors: {
