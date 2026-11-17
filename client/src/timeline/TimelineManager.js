@@ -554,7 +554,11 @@ export class TimelineManager {
   }
 
   getStudySetting() {
-    return new URLSearchParams(window.location.search).get('setting') === 'remote' ? 'remote' : 'museum';
+    // Only remote (asynchronous) sessions are running for now, so the first page
+    // always asks for a parent email. To bring back museum intake (participant
+    // index by default, ?setting=remote for email), restore the line below.
+    // return new URLSearchParams(window.location.search).get('setting') === 'remote' ? 'remote' : 'museum';
+    return 'remote';
   }
 
   showStartStage() {

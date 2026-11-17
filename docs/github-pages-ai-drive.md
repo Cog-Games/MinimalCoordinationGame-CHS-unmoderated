@@ -35,6 +35,8 @@ The storage validation page runs only through the development server and is not 
 
 ## Museum intake and labelled filenames (2026-10-15)
 
+> **Paused (2026-11-17):** only remote (asynchronous) sessions are running, so museum intake is turned off. `getStudySetting()` in `client/src/timeline/TimelineManager.js` always returns `'remote'` and every URL shows the parent-email entry; the museum line is commented out there and can be restored.
+
 On `codex/museum-default-entry`, the bare URL defaults to in-person sessions; `?setting=museum` also selects this mode. This retains DOB and replaces parent email with a required participant index (for example M001). Indices are normalized to uppercase and allow letters, digits, hyphens and underscores, up to 40 characters. Use `?setting=remote` for the parent-email entry. Both modes export `studySetting` and `participantIndex` alongside existing participant fields.
 
 Apps Script version 6 accepts a filename label while still looking up files by session ID. Once intake is submitted, the existing session workbook is renamed to `cake_M001_<sessionId>.xlsx` or `cake_parent@example.com_<sessionId>.xlsx`. Unsupported filename characters are replaced with underscores. The session suffix distinguishes separate visits with the same index/email. Older revisions cannot rename newer files. Existing historical files are unchanged unless their active session sends a newer snapshot.
@@ -44,4 +46,4 @@ Apps Script version 6 accepts a filename label while still looking up files by s
 
 `codex/museum-default-entry` is the active source branch. Each push automatically runs **Deploy to GitHub Pages**. Manual runs can also select this branch. The superseded `codex/drive-session-upsert` and `codex/pages-ai-drive` branches have been fully merged into this history and can be removed. The workflow builds with `npm run build:pages` and publishes the output to `gh-pages`. Keep Pages configured to serve `gh-pages` at `/ (root)`; do not point Pages directly at the source branch.
 
-After deployment, the bare game URL opens museum intake. Append `?setting=remote` for email intake. Both retain the existing one-workbook-per-session Drive service.
+After deployment, the bare game URL opens email intake (museum intake is paused; see above). Both retain the existing one-workbook-per-session Drive service.
