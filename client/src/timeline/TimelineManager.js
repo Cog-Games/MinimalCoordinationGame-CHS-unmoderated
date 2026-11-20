@@ -1646,21 +1646,16 @@ export class TimelineManager {
     // Emit event to show fixation display
     this.emit('show-fixation', { experimentType, experimentIndex, trialIndex });
 
-    // Add spacebar skip option for testing
-    const handleSkip = (event) => {
-      if (event.code === 'Space' || event.key === ' ') {
-        event.preventDefault();
-        document.removeEventListener('keydown', handleSkip);
-        console.log('⏭️ Fixation skipped by user');
-        this.nextStage();
-      }
-    };
-    document.addEventListener('keydown', handleSkip);
-
-    // Auto-advance after fixation duration
+    // Auto-advance after fixation duration. There is deliberately no spacebar
+    // skip: a skip that left this timer running made it fire a second
+    // nextStage() during the round, skipping that round and losing its data.
+    // The stage-index check guards against any other advance doing the same.
+    clearTimeout(this.currentFixationTimeout);
+    const fixationStageIndex = this.currentStageIndex;
     console.log(`⏰ Setting fixation timeout for ${CONFIG.game.timing.fixationDuration}ms`);
     const timeoutId = setTimeout(() => {
-      document.removeEventListener('keydown', handleSkip);
+      this.currentFixationTimeout = null;
+      if (this.currentStageIndex !== fixationStageIndex) return;
       console.log(`⚡ Fixation completed for trial ${trialIndex} - advancing to next stage`);
       this.nextStage();
     }, CONFIG.game.timing.fixationDuration);
